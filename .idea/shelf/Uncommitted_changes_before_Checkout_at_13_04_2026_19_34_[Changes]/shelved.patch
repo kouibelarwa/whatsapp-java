@@ -1,0 +1,167 @@
+Index: .idea/whatsapp-java.iml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+><?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<module type=\"JAVA_MODULE\" version=\"4\">\r\n  <component name=\"NewModuleRootManager\" inherit-compiler-output=\"true\">\r\n    <exclude-output />\r\n    <content url=\"file://$MODULE_DIR$\">\r\n      <sourceFolder url=\"file://$MODULE_DIR$/Client/src\" isTestSource=\"false\" />\r\n    </content>\r\n    <orderEntry type=\"inheritedJdk\" />\r\n    <orderEntry type=\"sourceFolder\" forTests=\"false\" />\r\n  </component>\r\n</module>
+===================================================================
+diff --git a/.idea/whatsapp-java.iml b/.idea/whatsapp-java.iml
+--- a/.idea/whatsapp-java.iml	(revision f0a551080fc97511d2a46ce6767ebb14a4bb5fe1)
++++ b/.idea/whatsapp-java.iml	(date 1775664211953)
+@@ -3,7 +3,7 @@
+   <component name="NewModuleRootManager" inherit-compiler-output="true">
+     <exclude-output />
+     <content url="file://$MODULE_DIR$">
+-      <sourceFolder url="file://$MODULE_DIR$/Client/src" isTestSource="false" />
++      <sourceFolder url="file://$MODULE_DIR$/ServeurCentral/src" isTestSource="false" />
+     </content>
+     <orderEntry type="inheritedJdk" />
+     <orderEntry type="sourceFolder" forTests="false" />
+Index: .idea/misc.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+><?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<project version=\"4\">\r\n  <component name=\"ProjectRootManager\" version=\"2\" languageLevel=\"JDK_25\" default=\"true\" project-jdk-name=\"openjdk-25\" project-jdk-type=\"JavaSDK\">\r\n    <output url=\"file://$PROJECT_DIR$/out\" />\r\n  </component>\r\n</project>
+===================================================================
+diff --git a/.idea/misc.xml b/.idea/misc.xml
+--- a/.idea/misc.xml	(revision f0a551080fc97511d2a46ce6767ebb14a4bb5fe1)
++++ b/.idea/misc.xml	(date 1775665731302)
+@@ -1,6 +1,6 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <project version="4">
+-  <component name="ProjectRootManager" version="2" languageLevel="JDK_25" default="true" project-jdk-name="openjdk-25" project-jdk-type="JavaSDK">
++  <component name="ProjectRootManager" version="2" languageLevel="JDK_25" default="true" project-jdk-name="25" project-jdk-type="JavaSDK">
+     <output url="file://$PROJECT_DIR$/out" />
+   </component>
+ </project>
+\ No newline at end of file
+Index: Client/src/media/CallManager.java
+===================================================================
+diff --git a/Client/src/media/CallManager.java b/ServeurCentral/src/Serveur/ClientHandler.java
+rename from Client/src/media/CallManager.java
+rename to ServeurCentral/src/Serveur/ClientHandler.java
+--- a/Client/src/media/CallManager.java	(revision f0a551080fc97511d2a46ce6767ebb14a4bb5fe1)
++++ b/ServeurCentral/src/Serveur/ClientHandler.java	(date 1775664962776)
+@@ -1,4 +1,4 @@
+-package media;
++package Serveur;
+ 
+-public class CallManager {
++public class ClientHandler {
+ }
+Index: Client/src/media/AudioManager.java
+===================================================================
+diff --git a/Client/src/media/AudioManager.java b/ServeurCentral/src/Serveur/server.java
+rename from Client/src/media/AudioManager.java
+rename to ServeurCentral/src/Serveur/server.java
+--- a/Client/src/media/AudioManager.java	(revision f0a551080fc97511d2a46ce6767ebb14a4bb5fe1)
++++ b/ServeurCentral/src/Serveur/server.java	(date 1775664962808)
+@@ -1,4 +1,4 @@
+-package media;
++package Serveur;
+ 
+-public class AudioManager {
++public class server {
+ }
+Index: .idea/workspace.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+><?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<project version=\"4\">\r\n  <component name=\"AutoImportSettings\">\r\n    <option name=\"autoReloadType\" value=\"SELECTIVE\" />\r\n  </component>\r\n  <component name=\"ChangeListManager\">\r\n    <list default=\"true\" id=\"c1ea7313-2f69-4bfe-8b2f-ac0f530a9957\" name=\"Changes\" comment=\"\">\r\n      <change afterPath=\"$PROJECT_DIR$/.idea/misc.xml\" afterDir=\"false\" />\r\n      <change afterPath=\"$PROJECT_DIR$/.idea/modules.xml\" afterDir=\"false\" />\r\n      <change afterPath=\"$PROJECT_DIR$/.idea/vcs.xml\" afterDir=\"false\" />\r\n      <change afterPath=\"$PROJECT_DIR$/.idea/whatsapp-java.iml\" afterDir=\"false\" />\r\n      <change afterPath=\"$PROJECT_DIR$/.idea/workspace.xml\" afterDir=\"false\" />\r\n      <change afterPath=\"$PROJECT_DIR$/README.md\" afterDir=\"false\" />\r\n    </list>\r\n    <option name=\"SHOW_DIALOG\" value=\"false\" />\r\n    <option name=\"HIGHLIGHT_CONFLICTS\" value=\"true\" />\r\n    <option name=\"HIGHLIGHT_NON_ACTIVE_CHANGELIST\" value=\"false\" />\r\n    <option name=\"LAST_RESOLUTION\" value=\"IGNORE\" />\r\n  </component>\r\n  <component name=\"Git.Settings\">\r\n    <option name=\"RECENT_GIT_ROOT_PATH\" value=\"$PROJECT_DIR$\" />\r\n  </component>\r\n  <component name=\"GitHubPullRequestSearchHistory\"><![CDATA[{\r\n  \"lastFilter\": {\r\n    \"state\": \"OPEN\",\r\n    \"assignee\": \"kouibelarwa\"\r\n  }\r\n}]]></component>\r\n  <component name=\"GithubPullRequestsUISettings\"><![CDATA[{\r\n  \"selectedUrlAndAccountId\": {\r\n    \"url\": \"https://github.com/kouibelarwa/whatsapp-java.git\",\r\n    \"accountId\": \"a98f8e12-fa08-438d-9cf6-ba7521da075a\"\r\n  }\r\n}]]></component>\r\n  <component name=\"ProjectColorInfo\"><![CDATA[{\r\n  \"associatedIndex\": 2\r\n}]]></component>\r\n  <component name=\"ProjectId\" id=\"3C2VSzvwwWuEfbGkG1JLDycvl7X\" />\r\n  <component name=\"ProjectViewState\">\r\n    <option name=\"hideEmptyMiddlePackages\" value=\"true\" />\r\n    <option name=\"showLibraryContents\" value=\"true\" />\r\n  </component>\r\n  <component name=\"PropertiesComponent\"><![CDATA[{\r\n  \"keyToString\": {\r\n    \"ModuleVcsDetector.initialDetectionPerformed\": \"true\",\r\n    \"RunOnceActivity.ShowReadmeOnStart\": \"true\",\r\n    \"RunOnceActivity.git.unshallow\": \"true\",\r\n    \"git-widget-placeholder\": \"Appel\",\r\n    \"kotlin-language-version-configured\": \"true\"\r\n  }\r\n}]]></component>\r\n  <component name=\"TaskManager\">\r\n    <task active=\"true\" id=\"Default\" summary=\"Default task\">\r\n      <changelist id=\"c1ea7313-2f69-4bfe-8b2f-ac0f530a9957\" name=\"Changes\" comment=\"\" />\r\n      <created>1775583657304</created>\r\n      <option name=\"number\" value=\"Default\" />\r\n      <option name=\"presentableId\" value=\"Default\" />\r\n      <updated>1775583657304</updated>\r\n    </task>\r\n    <servers />\r\n  </component>\r\n</project>
+===================================================================
+diff --git a/.idea/workspace.xml b/.idea/workspace.xml
+--- a/.idea/workspace.xml	(revision f0a551080fc97511d2a46ce6767ebb14a4bb5fe1)
++++ b/.idea/workspace.xml	(date 1776104934168)
+@@ -5,36 +5,49 @@
+   </component>
+   <component name="ChangeListManager">
+     <list default="true" id="c1ea7313-2f69-4bfe-8b2f-ac0f530a9957" name="Changes" comment="">
+-      <change afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+-      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
+-      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+-      <change afterPath="$PROJECT_DIR$/.idea/whatsapp-java.iml" afterDir="false" />
+-      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+-      <change afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
++      <change afterPath="$PROJECT_DIR$/ServeurCentral/src/Serveur/CallManger.java" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/.idea/whatsapp-java.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/whatsapp-java.iml" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/Client/src/media/AudioManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/ServeurCentral/src/Serveur/server.java" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/Client/src/media/CallManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/ServeurCentral/src/Serveur/ClientHandler.java" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/Client/src/media/VideoManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/ServeurCentral/src/Serveur/MessageRouter.java" afterDir="false" />
+     </list>
+     <option name="SHOW_DIALOG" value="false" />
+     <option name="HIGHLIGHT_CONFLICTS" value="true" />
+     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+     <option name="LAST_RESOLUTION" value="IGNORE" />
++  </component>
++  <component name="FileTemplateManagerImpl">
++    <option name="RECENT_TEMPLATES">
++      <list>
++        <option value="Class" />
++      </list>
++    </option>
+   </component>
+   <component name="Git.Settings">
++    <option name="RECENT_BRANCH_BY_REPOSITORY">
++      <map>
++        <entry key="$PROJECT_DIR$" value="Messagerie" />
++      </map>
++    </option>
+     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+   </component>
+-  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
+-  "lastFilter": {
+-    "state": "OPEN",
+-    "assignee": "kouibelarwa"
++  <component name="GitHubPullRequestSearchHistory">{
++  &quot;lastFilter&quot;: {
++    &quot;state&quot;: &quot;OPEN&quot;,
++    &quot;assignee&quot;: &quot;kouibelarwa&quot;
+   }
+-}]]></component>
+-  <component name="GithubPullRequestsUISettings"><![CDATA[{
+-  "selectedUrlAndAccountId": {
+-    "url": "https://github.com/kouibelarwa/whatsapp-java.git",
+-    "accountId": "a98f8e12-fa08-438d-9cf6-ba7521da075a"
++}</component>
++  <component name="GithubPullRequestsUISettings">{
++  &quot;selectedUrlAndAccountId&quot;: {
++    &quot;url&quot;: &quot;https://github.com/kouibelarwa/whatsapp-java.git&quot;,
++    &quot;accountId&quot;: &quot;a98f8e12-fa08-438d-9cf6-ba7521da075a&quot;
+   }
+-}]]></component>
+-  <component name="ProjectColorInfo"><![CDATA[{
+-  "associatedIndex": 2
+-}]]></component>
++}</component>
++  <component name="ProjectColorInfo">{
++  &quot;associatedIndex&quot;: 2
++}</component>
+   <component name="ProjectId" id="3C2VSzvwwWuEfbGkG1JLDycvl7X" />
+   <component name="ProjectViewState">
+     <option name="hideEmptyMiddlePackages" value="true" />
+@@ -44,9 +57,11 @@
+   "keyToString": {
+     "ModuleVcsDetector.initialDetectionPerformed": "true",
+     "RunOnceActivity.ShowReadmeOnStart": "true",
++    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+     "RunOnceActivity.git.unshallow": "true",
+-    "git-widget-placeholder": "Appel",
+-    "kotlin-language-version-configured": "true"
++    "git-widget-placeholder": "serveur",
++    "kotlin-language-version-configured": "true",
++    "last_opened_file_path": "C:/Users/DELL/IdeaProjects/whatsapp-java"
+   }
+ }]]></component>
+   <component name="TaskManager">
+Index: Client/src/media/VideoManager.java
+===================================================================
+diff --git a/Client/src/media/VideoManager.java b/ServeurCentral/src/Serveur/MessageRouter.java
+rename from Client/src/media/VideoManager.java
+rename to ServeurCentral/src/Serveur/MessageRouter.java
+--- a/Client/src/media/VideoManager.java	(revision f0a551080fc97511d2a46ce6767ebb14a4bb5fe1)
++++ b/ServeurCentral/src/Serveur/MessageRouter.java	(date 1775664962824)
+@@ -1,4 +1,4 @@
+-package media;
++package Serveur;
+ 
+-public class VideoManager {
++public class MessageRouter {
+ }

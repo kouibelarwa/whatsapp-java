@@ -1,0 +1,11 @@
+Index: ServeurCentral/src/Serveur/CallManger.java
+===================================================================
+diff --git a/ServeurCentral/src/Serveur/CallManger.java b/ServeurCentral/src/Serveur/CallManger.java
+new file mode 100644
+--- /dev/null	(date 1775665674012)
++++ b/ServeurCentral/src/Serveur/CallManger.java	(date 1775665674012)
+@@ -0,0 +1,4 @@
++package Serveur;
++
++public class CallManger {
++}
