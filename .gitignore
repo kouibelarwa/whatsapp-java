@@ -1,0 +1,12 @@
+# IntelliJ
+.idea/
+*.iml
+
+# compiled files
+out/
+
+# Maven (if used later)
+target/
+
+# OS files
+.DS_Store
