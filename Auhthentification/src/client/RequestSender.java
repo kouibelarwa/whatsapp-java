@@ -1,56 +1,41 @@
 package client;
 
-/**
- * RequestSender : formatte et envoie les requêtes au serveur via SocketManager.
- *
- * Centralise tous les types de messages envoyés pour éviter les erreurs
- * de protocole (format : receiver:type:content comme attendu par ClientHandler).
- */
+import java.nio.charset.StandardCharsets;
+
 public class RequestSender {
 
-    private final SocketManager socketManager;
+    private final SocketManager sm = SocketManager.getInstance();
 
-    public RequestSender() {
-        this.socketManager = SocketManager.getInstance();
+    public void sendText(String receiver, String message) {
+        sm.sendBinary(
+                "TEXT",
+                receiver,
+                "",
+                message.getBytes(StandardCharsets.UTF_8)
+        );
     }
 
-    /**
-     * Envoie un message texte.
-     * Format : receiver:TEXT:content
-     */
-    public void sendText(String receiver, String content) {
-        socketManager.send(receiver + ":TEXT:" + content);
+    public void sendFile(String receiver, String filename, byte[] data) {
+        sm.sendBinary("FILE", receiver, filename, data);
     }
 
-    /**
-     * Envoie un fichier (nom/chemin du fichier).
-     * Format : receiver:FILE:fileName
-     */
-    public void sendFile(String receiver, String fileName) {
-        socketManager.send(receiver + ":FILE:" + fileName);
+    public void sendAudio(String receiver, String filename, byte[] data) {
+        sm.sendBinary("AUDIO", receiver, filename, data);
     }
 
-    /**
-     * Envoie un message audio.
-     * Format : receiver:AUDIO:audioData
-     */
-    public void sendAudio(String receiver, String audioData) {
-        socketManager.send(receiver + ":AUDIO:" + audioData);
+    public void sendVideo(String receiver, String filename, byte[] data) {
+        sm.sendBinary("VIDEO", receiver, filename, data);
     }
 
-    /**
-     * Initie un appel.
-     * Format : receiver:CALL:INIT
-     */
     public void sendCallRequest(String receiver) {
-        socketManager.send(receiver + ":CALL:INIT");
+        sm.sendEvent("CALL_REQUEST:" + receiver);
     }
 
-    /**
-     * Envoie une vidéo.
-     * Format : receiver:VIDEO:videoData
-     */
-    public void sendVideo(String receiver, String videoData) {
-        socketManager.send(receiver + ":VIDEO:" + videoData);
+    public void acceptCall(String receiver) {
+        sm.sendEvent("CALL_ACCEPT:" + receiver);
+    }
+
+    public void endCall(String receiver) {
+        sm.sendEvent("CALL_END:" + receiver);
     }
 }

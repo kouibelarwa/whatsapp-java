@@ -4,49 +4,36 @@ public class Message {
     private int id;
     private String sender;
     private String receiver;
-    private String type; //audio text file video call
-    private  String content;
-    private String etat; //delivred not delivred
-    public Message(String sender, String receiver, String type, String content, String etat) {
+    private String type;     // text, audio, video, file, call
+    private String filename; // nom du fichier (vide si type=text)
+    private String etat;     // NOT_DELIVERED / DELIVERED
 
-        this.sender=sender;
-        this.receiver=receiver;
-        this.type=type;
-        this.content=content;
-        this.etat=etat;
+    // Constructeur sans ID (nouveau message)
+    public Message(String sender, String receiver, String type, String filename, String etat) {
+        this.sender = sender;
+        this.receiver = receiver;
+        this.type = type;
+        this.filename = filename;
+        this.etat = etat;
     }
-    public Message(int id, String sender, String receiver, String type, String content, String etat) {
+
+    // Constructeur avec ID (message récupéré de la DB)
+    public Message(int id, String sender, String receiver,
+                   String type, String filename, String etat) {
         this.id = id;
         this.sender = sender;
         this.receiver = receiver;
         this.type = type;
-        this.content = content;
+        this.filename = filename;
         this.etat = etat;
     }
 
+    public int getId()         { return id; }
+    public String getSender()  { return sender; }
+    public String getReceiver(){ return receiver; }
+    public String getType()    { return type; }
+    public String getFilename(){ return filename; }
+    public String getEtat()    { return etat; }
 
-    public int getId() {
-        return id;
-    }
-
-    public String getSender(){return sender;}
-
-    public String getReceiver() {
-        return receiver;
-    }
-
-    public String getType() {
-        return type;
-    }
-
-    public String getContent() {
-        return content;
-    }
-
-    public String getEtat() {
-        return etat;
-    }
-    public  void setEtat(String etat){
-        this.etat=etat;
-    }
+    public void setEtat(String etat) { this.etat = etat; }
 }

@@ -1,88 +1,148 @@
 package client;
 
-import java.io.BufferedReader;
-import java.io.PrintWriter;
+import java.io.*;
 import java.net.Socket;
 
-/**
- * SocketManager : Singleton qui maintient le socket actif partagé
- * entre tous les composants de l'application client.
- *
- * Permet à PhoneScreen, ProfileScreen et l'écran de chat d'accéder
- * au même socket sans le recréer.
- */
 public class SocketManager {
 
     private static SocketManager instance;
 
     private Socket socket;
-    private PrintWriter out;
-    private BufferedReader in;
-    private String currentUsername;
+
+    // AUTH
+    private PrintWriter textOut;
+    private BufferedReader textIn;
+
+    // BINARY CHAT
+    private DataOutputStream binOut;
+    private DataInputStream binIn;
+
+    private String username;
     private boolean authenticated = false;
 
-    // Constructeur privé → Singleton
     private SocketManager() {}
 
-    /**
-     * Retourne l'instance unique de SocketManager.
-     */
-    public static synchronized SocketManager getInstance() {
-        if (instance == null) {
-            instance = new SocketManager();
+    public static synchronized void reset() {
+        if (instance != null) {
+            try { instance.socket.close(); } catch (Exception ignored) {}
+            instance = null;
         }
-        return instance;
     }
 
-    /**
-     * Initialise le SocketManager avec une connexion existante.
-     * Appelé après AuthService.verifyCode() ou connectWithSession().
-     */
-    public void init(Socket socket, PrintWriter out, BufferedReader in, String username) {
+    // =========================
+    // AUTH MODE (TEXT)
+    // =========================
+    public void initAuth(Socket socket, String username) throws IOException {
         this.socket = socket;
-        this.out = out;
-        this.in = in;
-        this.currentUsername = username;
+        this.username = username;
+
+        this.textOut = new PrintWriter(socket.getOutputStream(), true);
+        this.textIn = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+
+        this.authenticated = false;
+    }
+
+    // =========================
+    // SWITCH TO BINARY MODE
+    // =========================
+    public void enableBinaryMode() throws IOException {
+        if (textOut != null) textOut.flush();
+        this.binOut = new DataOutputStream(socket.getOutputStream());
+        this.binIn  = new DataInputStream(socket.getInputStream());
         this.authenticated = true;
     }
 
-    /**
-     * Envoie un message brut au serveur.
-     */
-    public void send(String message) {
-        if (out != null) {
-            out.println(message);
-        } else {
-            System.out.println("❌ Impossible d'envoyer: socket non initialisé.");
-        }
-    }
+    // =========================
+    // SEND BINARY MESSAGE
+    // =========================
+    public synchronized void sendBinary(String type, String receiver, String filename, byte[] data) {
 
-    /**
-     * Vérifie si le socket est connecté et actif.
-     */
-    public boolean isConnected() {
-        return socket != null && socket.isConnected() && !socket.isClosed();
-    }
-
-    public Socket getSocket() { return socket; }
-    public PrintWriter getOut() { return out; }
-    public BufferedReader getIn() { return in; }
-    public String getCurrentUsername() { return currentUsername; }
-    public boolean isAuthenticated() { return authenticated; }
-
-    /**
-     * Réinitialise le SocketManager (déconnexion).
-     */
-    public void reset() {
         try {
-            if (socket != null) socket.close();
+            if (binOut == null) {
+                System.err.println("Binary not initialized");
+                return;
+            }
+
+            binOut.writeUTF(type);
+            binOut.writeUTF(receiver);
+            binOut.writeUTF(username);
+            binOut.writeUTF(filename == null ? "" : filename);
+
+            binOut.writeInt(data.length);
+            binOut.write(data);
+            binOut.flush();
+
         } catch (Exception e) {
-            e.printStackTrace();
+            System.err.println("sendBinary error: " + e.getMessage());
         }
-        socket = null;
-        out = null;
-        in = null;
-        currentUsername = null;
-        authenticated = false;
+    }
+
+    // =========================
+    // SEND EVENT (CALL ETC)
+    // =========================
+    public void sendMessage(String receiver, String text) {
+        sendBinary("TEXT", receiver, "", text.getBytes());
+    }
+    public void sendEvent(String event) {
+        textOut.println(event);
+    }
+
+    // =========================
+    // LISTENER
+    // =========================
+    public void startListening(MessageListener listener) {
+
+        new Thread(() -> {
+            try {
+                while (true) {
+                    String type     = binIn.readUTF();
+                    String sender   = binIn.readUTF();
+                    String filename = binIn.readUTF();
+                    int size        = binIn.readInt();
+                    byte[] data     = new byte[size];
+                    binIn.readFully(data);
+                    listener.onMessage(type, sender, filename, data);  // ✅ 4 paramètres
+                }
+            } catch (Exception e) {
+                listener.onDisconnect();
+            }
+        }).start();
+    }
+
+    public interface MessageListener {
+        void onMessage(String type, String sender,
+                       String filename, byte[] data);  // ✅ 4 paramètres
+        void onDisconnect();
+    }
+
+    // GETTERS
+    public String getUsername() { return username; }
+
+    public static SocketManager getInstance() {
+        return instance;
+    }
+
+    public Socket getSocket() {
+        return socket;
+    }
+
+    public PrintWriter getTextOut() {
+        return textOut;
+    }
+
+    public BufferedReader getTextIn() {
+        return textIn;
+    }
+
+    public DataOutputStream getBinOut() {
+        return binOut;
+    }
+
+    public DataInputStream getBinIn() {
+        return binIn;
+    }
+
+    public boolean isAuthenticated() {
+        return authenticated;
     }
 }
