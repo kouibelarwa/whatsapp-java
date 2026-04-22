@@ -111,7 +111,8 @@ public class ClientHandler extends Thread {
     }
 
     private boolean handleAuthRequest(String phone) throws IOException {
-        String code = generateCode();
+        String code = SmsCodeGenerator.generateCode();
+
         userDao.saveVerificationCode(phone, code);
         SmsApiServer.storeCode(phone, code);
         textOut.println("SMS_SENT");
@@ -291,9 +292,7 @@ public class ClientHandler extends Thread {
 
     // ── Utilitaires ──────────────────────────────────────────────
 
-    private String generateCode() {
-        return String.format("%06d", (int)(Math.random() * 1_000_000));
-    }
+
 
     private void disconnect() {
         if (userId != -1) {
