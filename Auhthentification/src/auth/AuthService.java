@@ -54,18 +54,16 @@ public class AuthService {
 
             String response = textIn.readLine();
 
-            if ("AUTH_OK".equals(response)) {
+            if (response != null && response.startsWith("AUTH_OK:")) {
+                String[] parts = response.split(":", 3);
+                int userId     = Integer.parseInt(parts[1]);
+                String myPhone = parts[2];
 
-                // 🔥 SAVE SESSION
-                SessionManager.saveSession(username, phone);
+                SessionManager.saveSession(userId, myPhone);
 
-                // 🔥 SWITCH SOCKET TO BINARY MODE
                 SocketManager sm = SocketManager.getInstance();
-
-                sm.initAuth(socket, username);   // garde socket + username
-                sm.enableBinaryMode();           // switch chat mode
-
-                System.out.println("✅ Auth success");
+                sm.initAuth(socket, userId, myPhone);
+                sm.enableBinaryMode();
                 return true;
             }
 

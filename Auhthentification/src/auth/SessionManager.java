@@ -21,14 +21,13 @@ public class SessionManager {
     /**
      * Sauvegarde la session après authentification réussie.
      *
-     * @param username nom d'utilisateur authentifié
      * @param phone    numéro de téléphone associé
      */
-    public static void saveSession(String username, String phone) {
+    public static void saveSession(int userId, String phone) {
         try (PrintWriter writer = new PrintWriter(new FileWriter(SESSION_FILE))) {
-            writer.println("username=" + username);
+            writer.println("userId=" + userId);
             writer.println("phone=" + phone);
-            System.out.println("✅ Session sauvegardée pour: " + username);
+            System.out.println("✅ Session sauvegardée pour: " + userId);
         } catch (IOException e) {
             System.out.println("Erreur sauvegarde session: " + e.getMessage());
         }
@@ -49,9 +48,11 @@ public class SessionManager {
      *
      * @return username ou null si pas de session
      */
-    public static String getSavedUsername() {
-        return readValue("username");
+    public static int getSavedUserId() {
+        String val = readValue("userId");
+        return val != null ? Integer.parseInt(val) : -1;
     }
+
 
     /**
      * Charge le numéro de téléphone depuis la session sauvegardée.

@@ -8,7 +8,7 @@ public class NetworkClient {
     private static final String HOST = "localhost";
     private static final int PORT = 5000;
 
-    public boolean connectWithSession(String username) {
+    public boolean connectWithSession(String phone) {    // ← paramètre devient phone
 
         try {
             Socket socket = new Socket(HOST, PORT);
@@ -16,15 +16,15 @@ public class NetworkClient {
             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 
-            // AUTH (TEXT)
-            out.println("LOGIN:" + username);
+            out.println("SESSION:" + phone);              // ✅ ligne 1
 
             String response = in.readLine();
 
-            if ("LOGIN_OK".equals(response)) {
+            if (response != null && response.startsWith("SESSION_OK:")) {  // ✅ ligne 2
+                int userId = Integer.parseInt(response.split(":")[1]);
 
                 SocketManager sm = SocketManager.getInstance();
-                sm.initAuth(socket, username);
+                sm.initAuth(socket, userId, phone);       // ✅ ligne 3
 
                 System.out.println("✅ Auth OK");
                 return true;

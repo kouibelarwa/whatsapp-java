@@ -29,11 +29,9 @@ public class ProfileScreen {
 
         if (ok) {
 
-            SessionManager.saveSession(username, phone);
 
             try {
                 SocketManager sm = SocketManager.getInstance();
-                sm.enableBinaryMode();
                 sm.startListening(new SocketManager.MessageListener() {
 
                     public void onMessage(String type, String sender,

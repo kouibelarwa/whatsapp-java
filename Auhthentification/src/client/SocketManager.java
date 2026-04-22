@@ -17,7 +17,8 @@ public class SocketManager {
     private DataOutputStream binOut;
     private DataInputStream binIn;
 
-    private String username;
+    private int    userId    = -1;
+    private String userPhone;
     private boolean authenticated = false;
 
     private SocketManager() {}
@@ -32,16 +33,14 @@ public class SocketManager {
     // =========================
     // AUTH MODE (TEXT)
     // =========================
-    public void initAuth(Socket socket, String username) throws IOException {
-        this.socket = socket;
-        this.username = username;
-
-        this.textOut = new PrintWriter(socket.getOutputStream(), true);
-        this.textIn = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-
+    public void initAuth(Socket socket, int userId, String phone) throws IOException {
+        this.socket    = socket;
+        this.userId    = userId;
+        this.userPhone = phone;
+        this.textOut   = new PrintWriter(socket.getOutputStream(), true);
+        this.textIn    = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         this.authenticated = false;
     }
-
     // =========================
     // SWITCH TO BINARY MODE
     // =========================
@@ -65,7 +64,7 @@ public class SocketManager {
 
             binOut.writeUTF(type);
             binOut.writeUTF(receiver);
-            binOut.writeUTF(username);
+            binOut.writeUTF(userPhone);
             binOut.writeUTF(filename == null ? "" : filename);
 
             binOut.writeInt(data.length);
@@ -116,9 +115,17 @@ public class SocketManager {
     }
 
     // GETTERS
-    public String getUsername() { return username; }
 
-    public static SocketManager getInstance() {
+    public int getUserId() {
+        return userId;
+    }
+
+    public String getUserPhone() {
+        return userPhone;
+    }
+
+    public static synchronized SocketManager getInstance() {
+        if (instance == null) instance = new SocketManager();
         return instance;
     }
 
