@@ -1,5 +1,7 @@
 package auth;
 
+import server.SmsApiServer;
+
 import java.util.Random;
 
 /**
@@ -42,17 +44,9 @@ public class SmsCodeGenerator {
         return code.matches("\\d{6}");
     }
 
-    /**
-     * Simule l'envoi d'un SMS (affiche dans la console pour le projet).
-     * Dans une vraie app : appel API Twilio/Orange/etc.
-     *
-     * @param phone numéro destinataire
-     * @param code  code généré
-     */
-    public static void simulateSend(String phone, String code) {
-        System.out.println("==============================");
-        System.out.println("📱 SMS envoyé à : " + phone);
-        System.out.println("🔑 Code de vérification : " + code);
-        System.out.println("==============================");
-    }
+//    public static String generateAndStore(String phone) {
+//        String code = generateCode();
+//        SmsApiServer.storeCode(phone, code);
+//        return code;
+//    }
 }
