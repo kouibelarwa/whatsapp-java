@@ -20,8 +20,9 @@ public class ContactDao {
      * contact_id = celui qui est ajouté
      */
     public boolean addContact(int ownerId, int contactId, String nickname) {
-        String sql = "INSERT IGNORE INTO contacts(owner_id, contact_id, nickname) "
-                + "VALUES (?, ?, ?)";
+        String sql = "INSERT INTO contacts(owner_id, contact_id, nickname) "
+                + "VALUES (?, ?, ?) "
+                + "ON DUPLICATE KEY UPDATE nickname = VALUES(nickname)";
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, ownerId);
@@ -52,9 +53,9 @@ public class ContactDao {
      * Récupère tous les contacts d'un utilisateur avec leur statut.
      * Retourne phone + username + status pour affichage interface.
      */
-    public List<User> getContacts(int ownerId) {
-        List<User> list = new ArrayList<>();
-        String sql = "SELECT u.id, u.phone, u.username, u.status "
+    public List<String[]> getContactsWithNickname(int ownerId) {
+        List<String[]> list = new ArrayList<>();
+        String sql = "SELECT u.id, u.phone, u.username, u.status, c.nickname "
                 + "FROM contacts c "
                 + "JOIN users u ON u.id = c.contact_id "
                 + "WHERE c.owner_id = ? "
@@ -64,14 +65,13 @@ public class ContactDao {
             ps.setInt(1, ownerId);
             ResultSet rs = ps.executeQuery();
             while (rs.next()) {
-                list.add(new User(
-                        rs.getInt("id"),
+                list.add(new String[]{
+                        String.valueOf(rs.getInt("id")),
                         rs.getString("phone"),
                         rs.getString("username"),
-                        null,   // code vérification inutile ici
-                        true,   // forcément vérifié si dans contacts
-                        rs.getString("status")
-                ));
+                        rs.getString("status"),
+                        rs.getString("nickname")  // peut être null
+                });
             }
         } catch (Exception e) { e.printStackTrace(); }
         return list;

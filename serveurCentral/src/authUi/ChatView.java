@@ -209,17 +209,24 @@ public class ChatView {
     // Dans ChatView.java, remplacez la méthode addContact par celle-ci :
     private void addContact() {
         String phoneInput = JOptionPane.showInputDialog(frame, "Entrer le numéro du contact :");
+        if (phoneInput == null || phoneInput.trim().isEmpty()) return;
 
-        if (phoneInput != null && !phoneInput.trim().isEmpty()) {
-            String payload = "ADD:" + phoneInput.trim();
-            // ✅ On envoie au "SERVER" car c'est lui qui gère la DB des contacts
-            SocketManager.getInstance().sendBinary(
-                    "CONTACT_SIGNAL",
-                    "SERVER", // Le serveur interceptera ce message
-                    "",
-                    payload.getBytes(StandardCharsets.UTF_8)
-            );
+        String nicknameInput = JOptionPane.showInputDialog(frame,
+                "Entrer un surnom pour ce contact (optionnel, laisser vide pour utiliser son nom) :");
+
+        String payload;
+        if (nicknameInput != null && !nicknameInput.trim().isEmpty()) {
+            payload = "ADD:" + phoneInput.trim() + ":" + nicknameInput.trim();
+        } else {
+            payload = "ADD:" + phoneInput.trim();
         }
+
+        SocketManager.getInstance().sendBinary(
+                "CONTACT_SIGNAL",
+                "SERVER",
+                "",
+                payload.getBytes(StandardCharsets.UTF_8)
+        );
     }
     // ─── Déconnexion ─────────────────────────────────────────────
     private void logout() {

@@ -55,10 +55,9 @@ public class ContactView {
         item.setBackground(new Color(30, 30, 30));
         item.setBorder(BorderFactory.createMatteBorder(
                 0, 0, 1, 0, new Color(45, 45, 45)));
-        item.setMaximumSize(new Dimension(Integer.MAX_VALUE, 70)); // Légèrement agrandi
+        item.setMaximumSize(new Dimension(Integer.MAX_VALUE, 70));
         item.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
-        // Infos de gauche (Nom + Téléphone)
         JLabel nameLabel = new JLabel(name);
         nameLabel.setForeground(Color.WHITE);
         nameLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
@@ -73,7 +72,6 @@ public class ContactView {
         left.add(nameLabel);
         left.add(phoneLabel);
 
-        // Infos de droite (Status + Poubelle)
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 15, 15));
         right.setOpaque(false);
 
@@ -83,8 +81,7 @@ public class ContactView {
         statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         right.add(statusLabel);
 
-        // --- BOUTON POUBELLE (Suppression locale uniquement) ---
-        JButton btnDelete = new JButton("🗑"); // Ou "×" si ton système ne supporte pas l'emoji
+        JButton btnDelete = new JButton("🗑");
         btnDelete.setFont(new Font("Segoe UI", Font.PLAIN, 16));
         btnDelete.setForeground(Color.DARK_GRAY);
         btnDelete.setBorderPainted(false);
@@ -92,22 +89,29 @@ public class ContactView {
         btnDelete.setFocusPainted(false);
         btnDelete.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
-        // Effet de survol (Hover)
         btnDelete.addMouseListener(new java.awt.event.MouseAdapter() {
             public void mouseEntered(java.awt.event.MouseEvent e) { btnDelete.setForeground(Color.RED); }
             public void mouseExited(java.awt.event.MouseEvent e) { btnDelete.setForeground(Color.DARK_GRAY); }
         });
 
-        // Action de suppression locale
+        // ✅ CORRECTION : supprime de la DB via le serveur
         btnDelete.addActionListener(e -> {
             int confirm = JOptionPane.showConfirmDialog(item,
-                    "Masquer ce contact de l'interface ?", "Supprimer localement",
+                    "Supprimer ce contact ?", "Supprimer",
                     JOptionPane.YES_NO_OPTION);
 
             if (confirm == JOptionPane.YES_OPTION) {
-                listPanel.remove(item);  // On retire le composant du panel
-                listPanel.revalidate();  // On recalcule la mise en page
-                listPanel.repaint();     // On redessine
+                // Envoyer au serveur pour supprimer de la DB
+                SocketManager.getInstance().sendBinary(
+                        "CONTACT_SIGNAL",
+                        "SERVER",
+                        "",
+                        ("REMOVE:" + phone).getBytes(StandardCharsets.UTF_8)
+                );
+                // Supprimer de l'interface
+                listPanel.remove(item);
+                listPanel.revalidate();
+                listPanel.repaint();
             }
         });
         right.add(btnDelete);
