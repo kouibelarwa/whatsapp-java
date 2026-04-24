@@ -8,8 +8,8 @@ public class NetworkClient {
     private final String host;
     private final int    port;
 
-    private Socket         socket;
-    private PrintWriter    out;
+    private Socket        socket;
+    private PrintWriter   out;
     private BufferedReader in;
 
     public NetworkClient(String host, int port) {
@@ -17,15 +17,17 @@ public class NetworkClient {
         this.port = port;
     }
 
-    /** Ouvre la connexion (appelé une seule fois au démarrage) */
     public void connect() throws IOException {
+        if (socket != null && !socket.isClosed()) {
+            try { socket.close(); } catch (Exception ignored) {}
+        }
         socket = new Socket(host, port);
         out    = new PrintWriter(socket.getOutputStream(), true);
         in     = new BufferedReader(
                 new InputStreamReader(socket.getInputStream()));
+        SocketManager.getInstance().initAuth(socket, -1, null);
     }
 
-    /** Envoie une ligne et retourne la réponse */
     public String send(String message) {
         try {
             out.println(message);
@@ -35,6 +37,8 @@ public class NetworkClient {
             return null;
         }
     }
+
+    public Socket getSocket() { return socket; }
 
     public void close() {
         try { if (socket != null) socket.close(); }

@@ -5,7 +5,6 @@ import auth.SessionManager;
 import client.NetworkClient;
 
 import javax.swing.*;
-import java.io.IOException;
 
 public class MainApp {
 
@@ -13,24 +12,13 @@ public class MainApp {
         SwingUtilities.invokeLater(() -> {
 
             NetworkClient network = new NetworkClient("localhost", 5000);
-
-            try {
-                network.connect();
-            } catch (IOException e) {
-                JOptionPane.showMessageDialog(null,
-                        "Impossible de se connecter au serveur.");
-                return;
-            }
-
-            AuthService auth = new AuthService(network);
+            AuthService   auth    = new AuthService(network);
 
             if (SessionManager.hasSession()) {
                 String savedPhone = SessionManager.getSavedPhone();
-
-                showLoading("Reconnexion en cours...");
+                showLoading("Reconnexion...");
 
                 auth.reconnect(savedPhone, new AuthService.AuthCallback() {
-
                     @Override
                     public void onSuccess(int userId, String phone,
                                           String username, boolean isNewUser) {
@@ -45,35 +33,31 @@ public class MainApp {
                         SwingUtilities.invokeLater(() -> {
                             hideLoading();
                             SessionManager.clearSession();
-                            new PhoneView(auth).show();
+                            new PhoneView(auth, network).show();
                         });
                     }
                 });
-
             } else {
-                new PhoneView(auth).show();
+                new PhoneView(auth, network).show();
             }
         });
     }
 
-    // ── Loading simple ────────────────────────────────────────────────
-    private static JWindow loadingWindow;
+    private static JWindow loading;
 
     private static void showLoading(String msg) {
-        loadingWindow = new JWindow();
-        JLabel label  = new JLabel(msg, SwingConstants.CENTER);
+        loading = new JWindow();
+        JLabel label = new JLabel(msg, SwingConstants.CENTER);
+        label.setBorder(
+                javax.swing.BorderFactory.createEmptyBorder(30, 50, 30, 50));
         label.setFont(label.getFont().deriveFont(16f));
-        label.setBorder(BorderFactory.createEmptyBorder(30, 50, 30, 50));
-        loadingWindow.add(label);
-        loadingWindow.pack();
-        loadingWindow.setLocationRelativeTo(null);
-        loadingWindow.setVisible(true);
+        loading.add(label);
+        loading.pack();
+        loading.setLocationRelativeTo(null);
+        loading.setVisible(true);
     }
 
     private static void hideLoading() {
-        if (loadingWindow != null) {
-            loadingWindow.dispose();
-            loadingWindow = null;
-        }
+        if (loading != null) { loading.dispose(); loading = null; }
     }
 }

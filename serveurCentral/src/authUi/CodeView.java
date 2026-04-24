@@ -1,206 +1,162 @@
 package authUi;
 
 import auth.AuthService;
+import client.NetworkClient;
+import client.SocketManager;
 
 import javax.swing.*;
-import javax.swing.border.*;
+import javax.swing.border.EmptyBorder;
 import java.awt.*;
-import java.awt.event.*;
 
-/**
- * CodeView — Saisie du code OTP reçu par SMS
- *
- * Si l'utilisateur est NOUVEAU → affiche aussi un champ username
- * Si l'utilisateur EXISTE déjà → pas de champ username (récupéré du serveur)
- *
- * Après AUTH_OK → ChatView
- */
 public class CodeView {
 
-    private final AuthService auth;
-    private final String      phone;
-    private JFrame frame;
+    private final String        phone;
+    private final AuthService   auth;
+    private final NetworkClient network;
 
-    public CodeView(AuthService auth, String phone) {
-        this.auth  = auth;
-        this.phone = phone;
+    private JFrame     frame;
+    private JTextField codeField;
+    private JTextField usernameField;
+    private JButton    btnVerify;
+    private JLabel     statusLabel;
+
+    public CodeView(String phone, AuthService auth, NetworkClient network) {
+        this.phone   = phone;
+        this.auth    = auth;
+        this.network = network;
     }
 
     public void show() {
-        frame = new JFrame("WhatsApp — Vérification");
+        frame = new JFrame("Vérification du code");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(420, 600);
+        frame.setSize(400, 340);
         frame.setLocationRelativeTo(null);
         frame.setResizable(false);
 
         JPanel main = new JPanel();
         main.setLayout(new BoxLayout(main, BoxLayout.Y_AXIS));
         main.setBackground(new Color(18, 18, 18));
-        main.setBorder(new EmptyBorder(40, 50, 40, 50));
+        main.setBorder(new EmptyBorder(35, 50, 35, 50));
 
-        // Titre
         JLabel title = new JLabel("Vérification");
-        title.setFont(new Font("Segoe UI", Font.BOLD, 26));
-        title.setForeground(new Color(37, 211, 102));
+        title.setForeground(Color.WHITE);
+        title.setFont(new Font("Segoe UI", Font.BOLD, 22));
         title.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        // Info numéro
-        JLabel phoneInfo = new JLabel("Code envoyé au : " + phone);
-        phoneInfo.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        phoneInfo.setForeground(new Color(150, 150, 150));
-        phoneInfo.setAlignmentX(Component.CENTER_ALIGNMENT);
+        JLabel sub = new JLabel("Code envoyé au : " + phone);
+        sub.setForeground(new Color(150, 150, 150));
+        sub.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        sub.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        // Champ code OTP
-        JLabel codeLabel = makeLabel("Code SMS reçu :");
-        JTextField codeField = makeField("000000");
+        JLabel lblCode = new JLabel("Code SMS");
+        lblCode.setForeground(new Color(200, 200, 200));
+        lblCode.setFont(new Font("Segoe UI", Font.PLAIN, 12));
 
-        // Champ username (visible seulement si nouveau)
-        JLabel userLabel   = makeLabel("Votre nom d'utilisateur :");
-        JTextField userField = makeField("ex: Jean");
+        codeField = new JTextField();
+        codeField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+        codeField.setBackground(new Color(30, 30, 30));
+        codeField.setForeground(Color.WHITE);
+        codeField.setCaretColor(Color.WHITE);
+        codeField.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(37, 211, 102)),
+                new EmptyBorder(5, 10, 5, 10)));
+        codeField.setFont(new Font("Segoe UI", Font.PLAIN, 16));
+        codeField.setHorizontalAlignment(JTextField.CENTER);
 
-        // Erreur
-        JLabel errorLabel = new JLabel(" ");
-        errorLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        errorLabel.setForeground(new Color(255, 80, 80));
-        errorLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        JLabel lblUser = new JLabel("Votre nom (pseudo)");
+        lblUser.setForeground(new Color(200, 200, 200));
+        lblUser.setFont(new Font("Segoe UI", Font.PLAIN, 12));
 
-        // Bouton valider
-        JButton btnVerify = createButton("Valider");
+        usernameField = new JTextField();
+        usernameField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+        usernameField.setBackground(new Color(30, 30, 30));
+        usernameField.setForeground(Color.WHITE);
+        usernameField.setCaretColor(Color.WHITE);
+        usernameField.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(60, 60, 60)),
+                new EmptyBorder(5, 10, 5, 10)));
+        usernameField.setFont(new Font("Segoe UI", Font.PLAIN, 15));
 
-        // Bouton changer de numéro
-        JButton btnBack = createSecondaryButton("← Changer de numéro");
-        btnBack.addActionListener(e -> {
-            frame.dispose();
-            new PhoneView(auth).show();
-        });
+        btnVerify = new JButton("Vérifier");
+        btnVerify.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
+        btnVerify.setBackground(new Color(37, 211, 102));
+        btnVerify.setForeground(Color.BLACK);
+        btnVerify.setFont(new Font("Segoe UI", Font.BOLD, 15));
+        btnVerify.setBorderPainted(false);
+        btnVerify.setFocusPainted(false);
+        btnVerify.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        btnVerify.addActionListener(e -> verifyCode());
+        usernameField.addActionListener(e -> verifyCode());
+        codeField.addActionListener(e -> usernameField.requestFocusInWindow());
 
-        // Action valider
-        ActionListener action = e -> {
-            String code     = codeField.getText().trim();
-            String username = userField.getText().trim();
+        statusLabel = new JLabel(" ");
+        statusLabel.setForeground(Color.RED);
+        statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        statusLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-            if (code.isEmpty() || !code.matches("\\d{6}")) {
-                errorLabel.setText("Le code doit contenir 6 chiffres.");
-                return;
-            }
-            if (userField.isVisible() && username.isEmpty()) {
-                errorLabel.setText("Veuillez entrer un nom d'utilisateur.");
-                return;
-            }
-
-            btnVerify.setEnabled(false);
-            btnVerify.setText("Vérification...");
-            errorLabel.setText(" ");
-
-            auth.verifyCode(phone, code, username,
-                    new AuthService.AuthCallback() {
-
-                        @Override
-                        public void onSuccess(int userId, String retPhone,
-                                              String retUsername, boolean isNewUser) {
-                            SwingUtilities.invokeLater(() -> {
-                                frame.dispose();
-
-                                if (isNewUser && (retUsername == null || retUsername.isBlank())) {
-                                    // Très rare : username non reçu → afficher champ
-                                    userLabel.setVisible(true);
-                                    userField.setVisible(true);
-                                    frame.revalidate();
-                                } else {
-                                    // ✅ Aller au ChatView
-                                    new ChatView(userId, retPhone, retUsername, null).show();
-                                }
-                            });
-                        }
-
-                        @Override
-                        public void onError(String reason) {
-                            SwingUtilities.invokeLater(() -> {
-                                btnVerify.setEnabled(true);
-                                btnVerify.setText("Valider");
-                                if ("WRONG_CODE".equals(reason)) {
-                                    errorLabel.setText("Code incorrect. Réessayez.");
-                                } else {
-                                    errorLabel.setText("Erreur : " + reason);
-                                }
-                            });
-                        }
-                    });
-        };
-
-        btnVerify.addActionListener(action);
-        codeField.addActionListener(action);
-
-        // Assemblage
         main.add(title);
-        main.add(Box.createVerticalStrut(8));
-        main.add(phoneInfo);
-        main.add(Box.createVerticalStrut(30));
-        main.add(codeLabel);
-        main.add(Box.createVerticalStrut(8));
+        main.add(Box.createVerticalStrut(5));
+        main.add(sub);
+        main.add(Box.createVerticalStrut(20));
+        main.add(lblCode);
+        main.add(Box.createVerticalStrut(5));
         main.add(codeField);
-        main.add(Box.createVerticalStrut(20));
-        main.add(userLabel);
-        main.add(Box.createVerticalStrut(8));
-        main.add(userField);
-        main.add(Box.createVerticalStrut(10));
-        main.add(errorLabel);
-        main.add(Box.createVerticalStrut(20));
+        main.add(Box.createVerticalStrut(15));
+        main.add(lblUser);
+        main.add(Box.createVerticalStrut(5));
+        main.add(usernameField);
+        main.add(Box.createVerticalStrut(15));
         main.add(btnVerify);
         main.add(Box.createVerticalStrut(10));
-        main.add(btnBack);
+        main.add(statusLabel);
 
-        frame.add(main);
+        frame.setContentPane(main);
         frame.setVisible(true);
+        codeField.requestFocusInWindow();
     }
 
-    // ── Helpers UI ────────────────────────────────────────────────────
-    private JLabel makeLabel(String text) {
-        JLabel l = new JLabel(text);
-        l.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        l.setForeground(new Color(200, 200, 200));
-        l.setAlignmentX(Component.CENTER_ALIGNMENT);
-        return l;
-    }
+    private void verifyCode() {
+        String code     = codeField.getText().trim();
+        String username = usernameField.getText().trim();
 
-    private JTextField makeField(String placeholder) {
-        JTextField f = new JTextField();
-        f.setFont(new Font("Segoe UI", Font.PLAIN, 18));
-        f.setForeground(Color.WHITE);
-        f.setBackground(new Color(35, 35, 35));
-        f.setCaretColor(new Color(37, 211, 102));
-        f.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(37, 211, 102), 2),
-                new EmptyBorder(10, 15, 10, 15)
-        ));
-        f.setMaximumSize(new Dimension(Integer.MAX_VALUE, 50));
-        f.setHorizontalAlignment(JTextField.CENTER);
-        return f;
-    }
+        if (code.isEmpty()) {
+            statusLabel.setText("Veuillez entrer le code SMS.");
+            return;
+        }
+        if (username.isEmpty()) {
+            statusLabel.setText("Veuillez entrer votre nom.");
+            return;
+        }
 
-    private JButton createButton(String text) {
-        JButton btn = new JButton(text);
-        btn.setFont(new Font("Segoe UI", Font.BOLD, 15));
-        btn.setBackground(new Color(37, 211, 102));
-        btn.setForeground(Color.BLACK);
-        btn.setFocusPainted(false);
-        btn.setBorderPainted(false);
-        btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        btn.setAlignmentX(Component.CENTER_ALIGNMENT);
-        btn.setMaximumSize(new Dimension(Integer.MAX_VALUE, 48));
-        return btn;
-    }
+        btnVerify.setEnabled(false);
+        btnVerify.setText("Vérification...");
+        statusLabel.setText(" ");
 
-    private JButton createSecondaryButton(String text) {
-        JButton btn = new JButton(text);
-        btn.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        btn.setBackground(new Color(35, 35, 35));
-        btn.setForeground(new Color(150, 150, 150));
-        btn.setFocusPainted(false);
-        btn.setBorderPainted(false);
-        btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        btn.setAlignmentX(Component.CENTER_ALIGNMENT);
-        btn.setMaximumSize(new Dimension(Integer.MAX_VALUE, 38));
-        return btn;
+        auth.verifyCode(phone, code, username, new AuthService.AuthCallback() {
+
+            @Override
+            public void onSuccess(int userId, String phone,
+                                  String username, boolean isNewUser) {
+                // Mettre à jour le phone dans SocketManager
+                SocketManager.getInstance().setUserPhone(phone);
+                SocketManager.getInstance().setUserId(userId);
+
+                SwingUtilities.invokeLater(() -> {
+                    frame.dispose();
+                    new ChatView(userId, phone, username, network).show();
+                });
+            }
+
+            @Override
+            public void onError(String reason) {
+                SwingUtilities.invokeLater(() -> {
+                    statusLabel.setText("Code invalide : " + reason);
+                    btnVerify.setEnabled(true);
+                    btnVerify.setText("Vérifier");
+                    codeField.selectAll();
+                    codeField.requestFocusInWindow();
+                });
+            }
+        });
     }
 }
