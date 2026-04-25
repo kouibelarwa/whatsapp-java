@@ -11,7 +11,7 @@ public class MainApp {
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
 
-            NetworkClient network = new NetworkClient("localhost", 5000);
+            NetworkClient network = new NetworkClient("100.104.161.27", 5000);
             AuthService   auth    = new AuthService(network);
 
             if (SessionManager.hasSession()) {

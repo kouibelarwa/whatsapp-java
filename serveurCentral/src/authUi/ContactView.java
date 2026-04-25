@@ -26,6 +26,12 @@ public class ContactView {
     }
 
     public void updateContacts(String payload) {
+        if (payload.startsWith("ADD_FAIL:")) {
+            JOptionPane.showMessageDialog(null,
+                    "Contact introuvable ! Ce numéro n'existe pas.",
+                    "Erreur", JOptionPane.ERROR_MESSAGE);
+            return; // ← ne pas vider la liste !
+        }
         listPanel.removeAll();
         if (payload == null || payload.isEmpty()) {
             listPanel.revalidate();
