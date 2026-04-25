@@ -18,21 +18,35 @@ public class Contactservice {
             String targetPhone = parts[0].trim();
             String nickname = parts.length > 1 ? parts[1].trim() : null;
 
+            // ✅ Empêcher de s'ajouter soi-même
+            if (targetPhone.equals(userPhone)) {
+                sendResponse(handler, "ADD_FAIL:SELF");
+                return;
+            }
+
             User target = userDao.getByPhone(targetPhone);
+
+            System.out.println("[Contactservice] ADD demandé : " + targetPhone
+                    + " → trouvé : " + (target != null ? target.getId() : "NULL")); // DEBUG
+
             if (target != null) {
-                contactDao.addContact(userId, target.getId(), nickname);
+                boolean added = contactDao.addContact(userId, target.getId(), nickname);
+                System.out.println("[Contactservice] addContact résultat : " + added); // DEBUG
                 handleGet(userId, handler);
             } else {
                 sendResponse(handler, "ADD_FAIL:NOT_FOUND");
             }
-        } else if (payload.equals("GET_CONTACTS")) {  // ← AJOUTER ÇA !
+
+        } else if (payload.equals("GET_CONTACTS")) {
             handleGet(userId, handler);
-        } else if (payload.startsWith("REMOVE:")) {  // ← AJOUTER ÇA
+
+        } else if (payload.startsWith("REMOVE:")) {
             String targetPhone = payload.substring(7).trim();
             User target = userDao.getByPhone(targetPhone);
             if (target != null) {
                 contactDao.removeContact(userId, target.getId());
             }
+            handleGet(userId, handler); // ✅ Renvoyer la liste après suppression
         }
     }
 

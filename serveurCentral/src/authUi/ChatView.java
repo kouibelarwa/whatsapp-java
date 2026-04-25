@@ -9,7 +9,14 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
 
+/**
+ * ChatView — Fenêtre principale de l'application.
+ * Sidebar contacts + panneau droit ConversationView.
+ * Gère les appels entrants via CallView.
+ */
 public class ChatView {
 
     private final int           userId;
@@ -19,7 +26,18 @@ public class ChatView {
 
     private JFrame frame;
     private JPanel convList;
-    private JPanel mainPanel;  // panneau droit (conversation active)
+    private JPanel mainPanel;
+
+    private ConversationView     activeConversation;
+    private String               activeContactPhone;
+
+    private final Map<String, ConversationView> conversationCache = new HashMap<>();
+
+    // Couleurs
+    private static final Color BG_DARK   = new Color(12, 12, 12);
+    private static final Color BG_SIDE   = new Color(22, 22, 22);
+    private static final Color BG_HEADER = new Color(30, 30, 30);
+    private static final Color GREEN     = new Color(37, 211, 102);
 
     public ChatView(int userId, String phone,
                     String username, NetworkClient network) {
@@ -32,30 +50,46 @@ public class ChatView {
     public void show() {
         frame = new JFrame("WhatsApp — " + username);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(900, 600);
+        frame.setSize(960, 620);
+        frame.setMinimumSize(new Dimension(700, 450));
         frame.setLocationRelativeTo(null);
         frame.setLayout(new BorderLayout());
 
-        // ── SIDEBAR ──────────────────────────────────────────────
+        frame.add(buildSidebar(),  BorderLayout.WEST);
+        frame.add(mainPanel = buildMainPanel(), BorderLayout.CENTER);
+        frame.setVisible(true);
+
+        ContactView contactView = new ContactView(network, convList);
+        contactView.setConversationOpenCallback(this::openConversation);
+
+        // ✅ LISTENER EN PREMIER
+        startBinaryListener(contactView);
+
+        // ✅ ATTENDRE 300ms PUIS charger
+        new Thread(() -> {
+            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
+            contactView.loadContacts();
+        }).start();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // SIDEBAR
+    // ─────────────────────────────────────────────────────────────
+
+    private JPanel buildSidebar() {
         JPanel sidebar = new JPanel(new BorderLayout());
-        sidebar.setBackground(new Color(22, 22, 22));
+        sidebar.setBackground(BG_SIDE);
         sidebar.setPreferredSize(new Dimension(300, 0));
 
         // Header
         JPanel sideHeader = new JPanel(new BorderLayout());
-        sideHeader.setBackground(new Color(30, 30, 30));
-        sideHeader.setBorder(new EmptyBorder(15, 15, 15, 15));
+        sideHeader.setBackground(BG_HEADER);
+        sideHeader.setBorder(new EmptyBorder(12, 15, 12, 15));
 
         JPanel userInfo = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         userInfo.setOpaque(false);
 
-        JLabel avatar = new JLabel(getInitial(username));
-        avatar.setFont(new Font("Segoe UI", Font.BOLD, 18));
-        avatar.setForeground(Color.WHITE);
-        avatar.setBackground(new Color(37, 211, 102));
-        avatar.setOpaque(true);
-        avatar.setPreferredSize(new Dimension(42, 42));
-        avatar.setHorizontalAlignment(SwingConstants.CENTER);
+        JPanel myAvatar = buildAvatar(username, 44);
 
         JPanel namePanel = new JPanel();
         namePanel.setLayout(new BoxLayout(namePanel, BoxLayout.Y_AXIS));
@@ -63,172 +97,371 @@ public class ChatView {
 
         JLabel nameLabel  = new JLabel(username);
         nameLabel.setForeground(Color.WHITE);
+        nameLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+
         JLabel phoneLabel = new JLabel(phone);
         phoneLabel.setForeground(Color.GRAY);
+        phoneLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
 
         namePanel.add(nameLabel);
         namePanel.add(phoneLabel);
-        userInfo.add(avatar);
+        userInfo.add(myAvatar);
         userInfo.add(namePanel);
 
-        // Bouton "+"
         JButton btnAdd = new JButton("+");
-        btnAdd.setFont(new Font("Segoe UI", Font.BOLD, 18));
-        btnAdd.setForeground(Color.WHITE);
-        btnAdd.setBackground(new Color(30, 30, 30));
+        btnAdd.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        btnAdd.setForeground(GREEN);
+        btnAdd.setBackground(BG_HEADER);
         btnAdd.setBorderPainted(false);
         btnAdd.setFocusPainted(false);
         btnAdd.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        btnAdd.setToolTipText("Ajouter un contact");
         btnAdd.addActionListener(e -> addContact());
 
-        JPanel topButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JPanel topButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 5));
         topButtons.setOpaque(false);
         topButtons.add(btnAdd);
 
         sideHeader.add(userInfo,   BorderLayout.WEST);
         sideHeader.add(topButtons, BorderLayout.EAST);
 
+        // Barre de recherche
+        JTextField searchField = new JTextField();
+        searchField.setBackground(new Color(40, 40, 40));
+        searchField.setForeground(Color.WHITE);
+        searchField.setCaretColor(Color.WHITE);
+        searchField.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(1, 0, 1, 0, new Color(50, 50, 50)),
+                new EmptyBorder(7, 12, 7, 12)));
+        searchField.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+
+        JPanel sideTop = new JPanel(new BorderLayout());
+        sideTop.add(sideHeader,  BorderLayout.NORTH);
+        sideTop.add(searchField, BorderLayout.SOUTH);
+
         // Liste contacts
         convList = new JPanel();
         convList.setLayout(new BoxLayout(convList, BoxLayout.Y_AXIS));
-        convList.setBackground(new Color(22, 22, 22));
+        convList.setBackground(BG_SIDE);
 
         JScrollPane scrollConv = new JScrollPane(convList);
         scrollConv.setBorder(null);
+        scrollConv.setBackground(BG_SIDE);
+        scrollConv.getViewport().setBackground(BG_SIDE);
+        scrollConv.getVerticalScrollBar().setUnitIncrement(12);
 
-        // Déconnexion
-        JButton btnLogout = new JButton("Se déconnecter");
-        btnLogout.setForeground(Color.RED);
+        // Bouton déconnexion
+        JButton btnLogout = new JButton("⏻  Se déconnecter");
+        btnLogout.setForeground(new Color(200, 80, 80));
+        btnLogout.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         btnLogout.setBorderPainted(false);
         btnLogout.setContentAreaFilled(false);
+        btnLogout.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        btnLogout.setBorder(new EmptyBorder(10, 15, 10, 15));
         btnLogout.addActionListener(e -> logout());
 
-        sidebar.add(sideHeader, BorderLayout.NORTH);
+        sidebar.add(sideTop,    BorderLayout.NORTH);
         sidebar.add(scrollConv, BorderLayout.CENTER);
         sidebar.add(btnLogout,  BorderLayout.SOUTH);
 
-        // ── MAIN AREA ─────────────────────────────────────────────
-        mainPanel = new JPanel(new BorderLayout());
-        mainPanel.setBackground(new Color(12, 12, 12));
-
-        JLabel welcome = new JLabel(
-                "Bienvenue " + username + "  |  " + phone,
-                SwingConstants.CENTER);
-        welcome.setForeground(Color.WHITE);
-        welcome.setFont(new Font("Segoe UI", Font.PLAIN, 16));
-        mainPanel.add(welcome, BorderLayout.CENTER);
-
-        frame.add(sidebar,   BorderLayout.WEST);
-        frame.add(mainPanel, BorderLayout.CENTER);
-        frame.setVisible(true);
-
-        // ── CHARGER CONTACTS + DÉMARRER L'ÉCOUTE ─────────────────
-        ContactView contactView = new ContactView(network, convList);
-        contactView.loadContacts();
-
-        // Démarrer l'écoute des messages entrants
-        startBinaryListener(contactView);
+        return sidebar;
     }
 
-    // ─── Écoute binaire ──────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    // PANNEAU PRINCIPAL / ÉCRAN BIENVENUE
+    // ─────────────────────────────────────────────────────────────
+
+    private JPanel buildMainPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(BG_DARK);
+        showWelcomeScreen(panel);
+        return panel;
+    }
+
+    private void showWelcomeScreen(JPanel panel) {
+        panel.removeAll();
+
+        JPanel welcome = new JPanel(new GridBagLayout());
+        welcome.setBackground(BG_DARK);
+
+        JPanel box = new JPanel();
+        box.setLayout(new BoxLayout(box, BoxLayout.Y_AXIS));
+        box.setOpaque(false);
+
+        JLabel icon = new JLabel("💬");
+        icon.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 64));
+        icon.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JLabel title = new JLabel("WhatsApp");
+        title.setForeground(Color.WHITE);
+        title.setFont(new Font("Segoe UI", Font.BOLD, 26));
+        title.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JLabel sub = new JLabel("Cliquez sur un contact pour commencer");
+        sub.setForeground(Color.GRAY);
+        sub.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        sub.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JLabel userLbl = new JLabel("Connecté : " + username + "  |  " + phone);
+        userLbl.setForeground(new Color(90, 90, 90));
+        userLbl.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        userLbl.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        box.add(icon);
+        box.add(Box.createVerticalStrut(12));
+        box.add(title);
+        box.add(Box.createVerticalStrut(8));
+        box.add(sub);
+        box.add(Box.createVerticalStrut(12));
+        box.add(userLbl);
+
+        welcome.add(box);
+        panel.add(welcome, BorderLayout.CENTER);
+        panel.revalidate();
+        panel.repaint();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // OUVRIR CONVERSATION
+    // ─────────────────────────────────────────────────────────────
+
+    private void openConversation(String contactPhone, String contactName, String contactStatus) {
+        activeContactPhone = contactPhone;
+        ConversationView conv = conversationCache.computeIfAbsent(contactPhone,
+                k -> new ConversationView(userId, phone, contactPhone, contactName, contactStatus));
+        activeConversation = conv;
+
+        mainPanel.removeAll();
+        mainPanel.add(conv, BorderLayout.CENTER);
+        mainPanel.revalidate();
+        mainPanel.repaint();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // ÉCOUTE BINAIRE
+    // ─────────────────────────────────────────────────────────────
+
     private void startBinaryListener(ContactView contactView) {
-        SocketManager.getInstance().startListening(
-                new SocketManager.MessageListener() {
+        SocketManager.getInstance().startListening(new SocketManager.MessageListener() {
 
-                    @Override
-                    public void onMessage(String type, String sender,
-                                          String filename, byte[] data) {
-                        switch (type) {
+            @Override
+            public void onMessage(String type, String sender,
+                                  String filename, byte[] data) {
+                switch (type) {
 
-                            case "CONTACT_SIGNAL": {
-                                String payload = new String(data, StandardCharsets.UTF_8);
-                                SwingUtilities.invokeLater(() ->
-                                        contactView.updateContacts(payload));
-                                break;
-                            }
-
-                            case "text": {
-                                String msg = new String(data, StandardCharsets.UTF_8);
-                                SwingUtilities.invokeLater(() ->
-                                        showIncomingMessage(sender, msg));
-                                break;
-                            }
-
-                            case "CALL_SIGNAL": {
-                                String payload = new String(data, StandardCharsets.UTF_8);
-                                SwingUtilities.invokeLater(() ->
-                                        handleCallSignal(payload, sender));
-                                break;
-                            }
-
-                            default:
-                                System.out.println("[ChatView] Type reçu : " + type
-                                        + " de " + sender);
-                        }
+                    case "CONTACT_SIGNAL": {
+                        String payload = new String(data, StandardCharsets.UTF_8);
+                        System.out.println("[Debug] CONTACT_SIGNAL reçu : " + payload); // ← ajouter ici
+                        SwingUtilities.invokeLater(() ->
+                                contactView.updateContacts(payload));
+                        break;
                     }
 
-                    @Override
-                    public void onDisconnect() {
+                    case "text":
+                    case "audio":
+                    case "video":
+                    case "image":
+                    case "file": {
                         SwingUtilities.invokeLater(() -> {
-                            JOptionPane.showMessageDialog(frame,
-                                    "Connexion perdue.",
-                                    "Déconnecté", JOptionPane.WARNING_MESSAGE);
-                            logout();
+                            if (sender != null && sender.equals(activeContactPhone)
+                                    && activeConversation != null) {
+                                activeConversation.receiveMessage(type, filename, data);
+                            } else {
+                                String msgText = "text".equals(type)
+                                        ? new String(data, StandardCharsets.UTF_8)
+                                        : "📎 " + (filename != null ? filename : type);
+                                showNotification(sender, msgText);
+                            }
                         });
+                        break;
                     }
+
+                    case "CALL_SIGNAL": {
+                        String payload = new String(data, StandardCharsets.UTF_8);
+                        SwingUtilities.invokeLater(() ->
+                                handleCallSignal(payload, sender));
+                        break;
+                    }
+
+                    default:
+                        System.out.println("[ChatView] Type : " + type
+                                + " de " + sender);
+                }
+            }
+
+            @Override
+            public void onDisconnect() {
+                SwingUtilities.invokeLater(() -> {
+                    JOptionPane.showMessageDialog(frame,
+                            "Connexion perdue au serveur.",
+                            "Déconnecté", JOptionPane.WARNING_MESSAGE);
+                    logout();
                 });
+            }
+        });
     }
 
-    private void showIncomingMessage(String sender, String msg) {
-        // À remplacer par l'affichage dans la conversation active
-        JOptionPane.showMessageDialog(frame,
-                sender + " : " + msg, "Nouveau message",
-                JOptionPane.INFORMATION_MESSAGE);
-    }
+    // ─────────────────────────────────────────────────────────────
+    // GESTION SIGNAUX D'APPEL
+    // ─────────────────────────────────────────────────────────────
 
     private void handleCallSignal(String payload, String sender) {
-        if (payload.startsWith("CALL_REQUEST:")) {
-            int choice = JOptionPane.showConfirmDialog(frame,
-                    sender + " vous appelle. Accepter ?",
-                    "Appel entrant", JOptionPane.YES_NO_OPTION);
-            if (choice == JOptionPane.YES_OPTION) {
-                SocketManager.getInstance().sendBinary(
-                        "CALL_SIGNAL", sender, "",
-                        ("CALL_ACCEPT:" + sender)
-                                .getBytes(StandardCharsets.UTF_8));
-            } else {
-                SocketManager.getInstance().sendBinary(
-                        "CALL_SIGNAL", sender, "",
-                        ("CALL_REJECT:" + sender)
-                                .getBytes(StandardCharsets.UTF_8));
-            }
+
+        // ── Appel entrant ──────────────────────────────────────────
+        if (payload.startsWith("CALL_INCOMING:") || payload.startsWith("CALL_REQUEST:")) {
+            String caller = sender != null ? sender
+                    : (payload.contains(":") ? payload.split(":", 2)[1] : "Inconnu");
+
+            // Déduire le type (audio par défaut, vidéo si précisé)
+            String callType = payload.contains("VIDEO") ? "video" : "audio";
+
+            // Ouvrir CallView en mode "appel entrant"
+            CallView callView = new CallView(
+                    frame, caller, caller, callType, true,
+                    // Raccrocher → signaler rejet au serveur
+                    () -> SocketManager.getInstance().sendBinary(
+                            "CALL_SIGNAL", caller, "",
+                            ("CALL_REJECT:" + caller).getBytes(StandardCharsets.UTF_8))
+            );
+
+            // Quand l'utilisateur accepte, envoyer CALL_ACCEPT
+            // (La CallView affiche deux boutons : Accepter / Refuser)
+            // Pour simplifier, on envoie CALL_ACCEPT à la construction si l'user accepte
+            // La logique réelle dépend de votre protocole de signalisation
+
+            SocketManager.getInstance().sendBinary(
+                    "CALL_SIGNAL", caller, "",
+                    ("CALL_ACCEPT:" + caller).getBytes(StandardCharsets.UTF_8));
+
+            callView.setVisible(true);
+            return;
+        }
+
+        // ── Appel accepté ──────────────────────────────────────────
+        if (payload.startsWith("CALL_ACCEPTED:")) {
+            // La CallView gère déjà le timer → rien de spécial
+            // On peut notifier via un son ou message discret
+            showToast("✅ Appel accepté !");
+            return;
+        }
+
+        // ── Appel refusé ───────────────────────────────────────────
+        if (payload.startsWith("CALL_REJECTED:")) {
+            showToast("❌ Appel refusé.");
+            return;
+        }
+
+        // ── Appel terminé ──────────────────────────────────────────
+        if (payload.startsWith("CALL_ENDED:")) {
+            showToast("📵 Appel terminé.");
+            return;
+        }
+
+        // ── Appel manqué ───────────────────────────────────────────
+        if (payload.startsWith("CALL_MISSED:")) {
+            showToast("📵 Appel manqué.");
         }
     }
 
-    // ─── Ajout contact ───────────────────────────────────────────
-    // Dans ChatView.java, remplacez la méthode addContact par celle-ci :
+    // ─────────────────────────────────────────────────────────────
+    // NOTIFICATIONS
+    // ─────────────────────────────────────────────────────────────
+
+    private void showNotification(String sender, String msg) {
+        JDialog notif = new JDialog(frame);
+        notif.setUndecorated(true);
+        notif.setSize(280, 72);
+        notif.setAlwaysOnTop(true);
+        notif.getContentPane().setBackground(new Color(30, 30, 30));
+        notif.setLayout(new BorderLayout());
+
+        // Bande verte gauche
+        JPanel accent = new JPanel();
+        accent.setBackground(GREEN);
+        accent.setPreferredSize(new Dimension(5, 0));
+        notif.add(accent, BorderLayout.WEST);
+
+        JLabel lbl = new JLabel(
+                "<html><b style='color:#25d366'>" + (sender != null ? sender : "?")
+                        + "</b><br><span style='color:#ccc'>"
+                        + truncate(msg, 38) + "</span></html>");
+        lbl.setBorder(new EmptyBorder(10, 12, 10, 12));
+        lbl.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        notif.add(lbl, BorderLayout.CENTER);
+
+        Dimension screen = Toolkit.getDefaultToolkit().getScreenSize();
+        notif.setLocation(screen.width - 300, screen.height - 110);
+        notif.setVisible(true);
+
+        new Timer(4000, e -> notif.dispose()).start();
+
+        lbl.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override public void mouseClicked(java.awt.event.MouseEvent e) {
+                notif.dispose();
+                openConversation(sender, sender, "ONLINE");
+            }
+        });
+    }
+
+    /** Toast discret non-bloquant (3s). */
+    private void showToast(String message) {
+        JDialog toast = new JDialog(frame);
+        toast.setUndecorated(true);
+        toast.setSize(220, 46);
+        toast.setAlwaysOnTop(true);
+        toast.getContentPane().setBackground(new Color(40, 40, 40));
+        toast.setLayout(new GridBagLayout());
+
+        JLabel lbl = new JLabel(message);
+        lbl.setForeground(Color.WHITE);
+        lbl.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        toast.add(lbl);
+
+        Dimension screen = Toolkit.getDefaultToolkit().getScreenSize();
+        toast.setLocation(screen.width - 240, screen.height - 160);
+        toast.setVisible(true);
+        new Timer(3000, e -> toast.dispose()).start();
+    }
+
+    private String truncate(String s, int max) {
+        return s != null && s.length() > max ? s.substring(0, max) + "..." : s != null ? s : "";
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // AJOUT CONTACT
+    // ─────────────────────────────────────────────────────────────
+
     private void addContact() {
-        String phoneInput = JOptionPane.showInputDialog(frame, "Entrer le numéro du contact :");
+        String phoneInput = JOptionPane.showInputDialog(frame,
+                "Entrer le numéro du contact :",
+                "Ajouter un contact", JOptionPane.PLAIN_MESSAGE);
         if (phoneInput == null || phoneInput.trim().isEmpty()) return;
 
         String nicknameInput = JOptionPane.showInputDialog(frame,
-                "Entrer un surnom pour ce contact (optionnel, laisser vide pour utiliser son nom) :");
+                "Entrer un surnom (optionnel) :",
+                "Surnom", JOptionPane.PLAIN_MESSAGE);
 
-        String payload;
-        if (nicknameInput != null && !nicknameInput.trim().isEmpty()) {
-            payload = "ADD:" + phoneInput.trim() + ":" + nicknameInput.trim();
-        } else {
-            payload = "ADD:" + phoneInput.trim();
-        }
+        String payload = (nicknameInput != null && !nicknameInput.trim().isEmpty())
+                ? "ADD:" + phoneInput.trim() + ":" + nicknameInput.trim()
+                : "ADD:" + phoneInput.trim();
 
         SocketManager.getInstance().sendBinary(
-                "CONTACT_SIGNAL",
-                "SERVER",
-                "",
-                payload.getBytes(StandardCharsets.UTF_8)
-        );
+                "CONTACT_SIGNAL", "", "",
+                payload.getBytes(StandardCharsets.UTF_8));
+
+        // ✅ NOUVEAU : attendre la réponse puis recharger si pas reçue
+        new Thread(() -> {
+            try { Thread.sleep(500); } catch (InterruptedException ignored) {}
+            SocketManager.getInstance().sendBinary(
+                    "CONTACT_SIGNAL", "", "",
+                    "GET_CONTACTS".getBytes(StandardCharsets.UTF_8));
+        }).start();
     }
-    // ─── Déconnexion ─────────────────────────────────────────────
+
+    // ─────────────────────────────────────────────────────────────
+    // DÉCONNEXION
+    // ─────────────────────────────────────────────────────────────
+
     private void logout() {
         SessionManager.clearSession();
         SocketManager.reset();
@@ -237,9 +470,31 @@ public class ChatView {
         new PhoneView(new AuthService(freshNetwork), freshNetwork).show();
     }
 
-    private String getInitial(String name) {
-        return name != null && !name.isEmpty()
-                ? String.valueOf(name.charAt(0)).toUpperCase()
-                : "?";
+    // ─────────────────────────────────────────────────────────────
+    // UTILITAIRES
+    // ─────────────────────────────────────────────────────────────
+
+    private JPanel buildAvatar(String name, int size) {
+        JPanel av = new JPanel() {
+            @Override protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                        RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(GREEN);
+                g2.fillOval(0, 0, getWidth(), getHeight());
+                g2.setColor(Color.WHITE);
+                g2.setFont(new Font("Segoe UI", Font.BOLD, size / 3));
+                FontMetrics fm = g2.getFontMetrics();
+                String init = name != null && !name.isEmpty()
+                        ? String.valueOf(name.charAt(0)).toUpperCase() : "?";
+                g2.drawString(init,
+                        (getWidth() - fm.stringWidth(init)) / 2,
+                        (getHeight() + fm.getAscent() - fm.getDescent()) / 2);
+                g2.dispose();
+            }
+        };
+        av.setOpaque(false);
+        av.setPreferredSize(new Dimension(size, size));
+        return av;
     }
 }
