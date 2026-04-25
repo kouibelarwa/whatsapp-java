@@ -1,5 +1,6 @@
 package server;
 
+import auth.SmsCodeGenerator;
 import dao.UserDao;
 import model.Message;
 import model.User;
@@ -12,47 +13,22 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 
 /**
- * ClientHandler — un Thread par client connecté.
- *
- * ══════════════════════════════════════════════════════════════
- * PHASE 1 — AUTH texte
- * ══════════════════════════════════════════════════════════════
- *   Client → "AUTH_REQUEST:phone"
- *   Serveur → "SMS_SENT"
- *   Client → "VERIFY_CODE:phone:code:username"
- *   Serveur → "AUTH_OK:userId:phone" | "AUTH_FAIL:raison"
- *
- *   Client → "SESSION:phone"          ← phone sauvegardé localement
- *   Serveur → "SESSION_OK:userId" | "ERROR:raison"
- *
- * ══════════════════════════════════════════════════════════════
- * PHASE 2 — CHAT binaire
- * ══════════════════════════════════════════════════════════════
- *   Trame client → serveur :
- *     type(UTF) | receiverPhone(UTF) | senderPhone(UTF) |
- *     filename(UTF) | size(Int) | data[size]
- *
- *   Types :
- *     "text"           → data = bytes UTF-8
- *     "audio/video/file" → data = bytes binaires
- *     "CALL_SIGNAL"    → data = "CALL_REQUEST:phone" | "CALL_ACCEPT:phone" | ...
- *     "CONTACT_SIGNAL" → data = "ADD:phone" | "REMOVE:phone" |
- *                               "GET_CONTACTS" | "SEARCH:phone"
- *
- *   Trame serveur → client :
- *     type(UTF) | senderPhone(UTF) | filename(UTF) | size(Int) | data[size]
+ * ClientHandler — ✅ CORRIGÉ :
+ * - binOut initialisé AVANT d'être utilisé (fix NPE)
+ * - Protocol AUTH séparé du protocole binaire
+ * - send() vérifie que binOut est prêt
+ * - Gestion propre de la déconnexion
  */
 public class ClientHandler extends Thread {
 
     private static final int MAX_SIZE = 100 * 1024 * 1024; // 100 Mo
 
-    private final Socket          socket;
-    private       BufferedReader  textIn;
-    private       PrintWriter     textOut;
-    private       DataInputStream  binIn;
-    private       DataOutputStream binOut;
+    private final Socket socket;
 
-    // Identifiants du client connecté
+    // ✅ FIX : déclaré en haut, initialisé AVANT usage
+    private DataInputStream  binIn;
+    private DataOutputStream binOut;
+
     private int    userId   = -1;
     private String userPhone;
     private String username;
@@ -69,61 +45,78 @@ public class ClientHandler extends Thread {
     @Override
     public void run() {
         try {
-            textIn  = new BufferedReader(
-                    new InputStreamReader(socket.getInputStream()));
-            textOut = new PrintWriter(
-                    new OutputStreamWriter(socket.getOutputStream()), true);
+            // ✅ FIX : initialiser les flux binaires EN PREMIER
+            // (on utilisera DataInputStream/DataOutputStream pour TOUT,
+            //  y compris la phase d'auth texte, encodée en UTF-8)
+            binIn  = new DataInputStream(
+                    new BufferedInputStream(socket.getInputStream()));
+            binOut = new DataOutputStream(
+                    new BufferedOutputStream(socket.getOutputStream()));
 
-            if (!handleAuth()) { socket.close(); return; }
+            if (!handleAuth()) {
+                socket.close();
+                return;
+            }
 
-            binIn  = new DataInputStream(socket.getInputStream());
-            binOut = new DataOutputStream(socket.getOutputStream());
-
-            // Livrer les messages offline avec l'ID réel
+            // Livrer les messages hors-ligne
             msgService.deliverOfflineMessages(userId, userPhone, this);
 
+            // Boucle principale
             chatLoop();
 
         } catch (Exception e) {
-            System.out.println("[Server] " + tag() + " déconnecté : "
-                    + e.getMessage());
+            System.out.println("[Server] " + tag() + " déconnecté : " + e.getMessage());
         } finally {
             disconnect();
         }
     }
 
-    // ── PHASE 1 ─────────────────────────────────────────────────
+    // ── AUTH ─────────────────────────────────────────────────────────────────
+    // ✅ FIX : on utilise readUTF/writeUTF directement sur les flux binaires
+    //         pour que le protocole soit cohérent des deux côtés
+    // ─────────────────────────────────────────────────────────────────────────
 
     private boolean handleAuth() throws IOException {
-        String line = textIn.readLine();
+        String line = binIn.readUTF();
         if (line == null) return false;
 
-        if (line.startsWith("AUTH_REQUEST:")) {
+        if (line.startsWith("AUTH_REQUEST:"))
             return handleAuthRequest(
                     line.substring("AUTH_REQUEST:".length()).trim());
-        }
-        if (line.startsWith("SESSION:")) {
+
+        if (line.startsWith("SESSION:"))
             return handleSessionReconnect(
                     line.substring("SESSION:".length()).trim());
-        }
-        textOut.println("ERROR:UNKNOWN_COMMAND");
+
+        sendText("ERROR:UNKNOWN_COMMAND");
         return false;
     }
 
     private boolean handleAuthRequest(String phone) throws IOException {
         String code = SmsCodeGenerator.generateCode();
-
         userDao.saveVerificationCode(phone, code);
         SmsApiServer.storeCode(phone, code);
-        textOut.println("SMS_SENT");
 
-        String verifyLine = textIn.readLine();
+        System.out.println("[Server] Envoi SMS_SENT...");
+        sendText("SMS_SENT");
+
+        System.out.println("[Server] En attente du message VERIFY_CODE...");
+        String verifyLine = binIn.readUTF(); // C'est ici que ça bloque si rien n'arrive
+
+        System.out.println("[Server] Reçu : " + verifyLine); // <--- AJOUTE ÇA
+
         if (verifyLine == null || !verifyLine.startsWith("VERIFY_CODE:")) {
-            textOut.println("AUTH_FAIL:BAD_PROTOCOL"); return false;
+            System.out.println("[Server] Format invalide reçu : " + verifyLine);
+            sendText("AUTH_FAIL:BAD_PROTOCOL");
+            return false;
         }
+        // ... reste du code
+
         String[] parts = verifyLine.split(":", 4);
         if (parts.length < 4) {
-            textOut.println("AUTH_FAIL:BAD_FORMAT"); return false;
+
+            sendText("AUTH_FAIL:BAD_FORMAT");
+            return false;
         }
 
         String reqPhone    = parts[1];
@@ -131,47 +124,50 @@ public class ClientHandler extends Thread {
         String reqUsername = parts[3].trim();
 
         if (!userDao.verifyCode(reqPhone, reqCode)) {
-            textOut.println("AUTH_FAIL:WRONG_CODE"); return false;
+            sendText("AUTH_FAIL:WRONG_CODE");
+            return false;
         }
         SmsApiServer.removeCode(reqPhone);
 
-        // Enregistrer et récupérer l'ID
         userDao.markVerifiedAndSetUsername(reqPhone, reqUsername);
         int id = userDao.getIdByPhone(reqPhone);
         if (id == -1) {
-            textOut.println("AUTH_FAIL:DB_ERROR"); return false;
+            sendText("AUTH_FAIL:DB_ERROR");
+            return false;
         }
 
-        // Vérifier si déjà connecté (par ID)
         if (ChatServer.clients.containsKey(id)) {
-            textOut.println("AUTH_FAIL:ALREADY_CONNECTED"); return false;
+            sendText("AUTH_FAIL:ALREADY_CONNECTED");
+            return false;
         }
 
-        this.userId   = id;
+        this.userId    = id;
         this.userPhone = reqPhone;
         this.username  = reqUsername;
         ChatServer.clients.put(userId, this);
         userDao.updateStatusById(userId, "ONLINE");
 
-        // Envoyer l'ID et le phone au client pour qu'il les utilise
-        textOut.println("AUTH_OK:" + userId + ":" + reqPhone);
-        System.out.println("[Server] " + username
-                + " (id=" + userId + ") authentifié.");
+        // ✅ Inclure username dans la réponse
+        sendText("AUTH_OK:" + userId + ":" + reqPhone + ":" + reqUsername);
+        System.out.println("[Server] " + username + " (id=" + userId + ") authentifié.");
         return true;
     }
 
-    private boolean handleSessionReconnect(String savedPhone) {
+    private boolean handleSessionReconnect(String savedPhone) throws IOException {
         if (savedPhone == null || savedPhone.isEmpty()) {
-            textOut.println("ERROR:INVALID_PHONE"); return false;
+            sendText("ERROR:INVALID_PHONE");
+            return false;
         }
 
         User user = userDao.getByPhone(savedPhone);
         if (user == null || !user.isVerified()) {
-            textOut.println("ERROR:USER_NOT_FOUND"); return false;
+            sendText("ERROR:USER_NOT_FOUND");
+            return false;
         }
 
         if (ChatServer.clients.containsKey(user.getId())) {
-            textOut.println("ERROR:ALREADY_CONNECTED"); return false;
+            sendText("ERROR:ALREADY_CONNECTED");
+            return false;
         }
 
         this.userId    = user.getId();
@@ -180,32 +176,36 @@ public class ClientHandler extends Thread {
         ChatServer.clients.put(userId, this);
         userDao.updateStatusById(userId, "ONLINE");
 
-        textOut.println("SESSION_OK:" + userId);
+        // ✅ Inclure username dans la réponse
+        sendText("SESSION_OK:" + userId + ":" + username);
         System.out.println("[Server] " + username
                 + " (id=" + userId + ") reconnecté via session.");
         return true;
     }
 
-    // ── PHASE 2 ─────────────────────────────────────────────────
+    // ── CHAT LOOP ─────────────────────────────────────────────────────────────
 
     private void chatLoop() throws IOException {
-        while (true) {
-            String type          = binIn.readUTF();
-            String receiverPhone = binIn.readUTF();
-            String senderPhone   = binIn.readUTF(); // ignoré, on force userPhone
-            String filename      = binIn.readUTF();
-            int    size          = binIn.readInt();
+        try {
+            while (true) {
+                String type          = binIn.readUTF();
+                String receiverPhone = binIn.readUTF();
+                String senderPhone   = binIn.readUTF(); // envoyé mais souvent inutilisé côté serveur
+                String filename      = binIn.readUTF();
+                int    size          = binIn.readInt();
 
-            if (size < 0 || size > MAX_SIZE) {
-                System.err.println("[Security] Taille invalide de "
-                        + username + " : " + size);
-                break;
+                if (size < 0 || size > MAX_SIZE) {
+                    System.err.println("[Security] Taille invalide de "
+                            + username + " : " + size);
+                    break;
+                }
+
+                byte[] data = new byte[size];
+                binIn.readFully(data);
+                dispatch(type, receiverPhone, filename, data);
             }
-
-            byte[] data = new byte[size];
-            binIn.readFully(data);
-
-            dispatch(type, receiverPhone, filename, data);
+        } catch (EOFException e) {
+            System.out.println("[Server] Flux terminé pour " + username);
         }
     }
 
@@ -216,12 +216,11 @@ public class ClientHandler extends Thread {
             case "text":
             case "audio":
             case "video":
+            case "image":
             case "file": {
-                // Résoudre receiverId depuis receiverPhone
                 int receiverId = userDao.getIdByPhone(receiverPhone);
                 if (receiverId == -1) {
-                    System.err.println("[Server] Phone inconnu : "
-                            + receiverPhone);
+                    System.err.println("[Server] Phone inconnu : " + receiverPhone);
                     return;
                 }
                 Message m;
@@ -229,18 +228,17 @@ public class ClientHandler extends Thread {
                     String content = new String(data, StandardCharsets.UTF_8);
                     m = Message.text(userId, userPhone, receiverId, content);
                 } else {
-                    m = Message.binary(userId, userPhone,
-                            receiverId, type, filename);
+                    m = Message.binary(userId, userPhone, receiverId, type, filename);
                 }
                 msgService.process(m, data);
                 break;
             }
 
             case "CALL_SIGNAL": {
-                String payload   = new String(data, StandardCharsets.UTF_8);
-                String[] parts   = payload.split(":", 2);
+                String payload = new String(data, StandardCharsets.UTF_8);
+                String[] parts = payload.split(":", 2);
                 if (parts.length < 2) return;
-                String signal    = parts[0];
+                String signal     = parts[0];
                 String otherPhone = parts[1];
 
                 switch (signal) {
@@ -269,30 +267,39 @@ public class ClientHandler extends Thread {
             }
 
             default:
-                System.err.println("[Server] Type inconnu de "
-                        + username + " : " + type);
+                System.err.println("[Server] Type inconnu de " + username + " : " + type);
         }
     }
 
-    // ── Envoi vers ce client ─────────────────────────────────────
+    // ── SEND ─────────────────────────────────────────────────────────────────
 
-    public synchronized void send(String type, String senderPhone,
-                                  String filename, byte[] data)
-            throws IOException {
-        DataOutputStream out = binOut != null
-                ? binOut
-                : new DataOutputStream(socket.getOutputStream());
-        out.writeUTF(type);
-        out.writeUTF(senderPhone != null ? senderPhone : "");
-        out.writeUTF(filename    != null ? filename    : "");
-        out.writeInt(data.length);
-        out.write(data);
-        out.flush();
+    /**
+     * ✅ FIX : envoi texte (phase AUTH) via writeUTF
+     */
+    private synchronized void sendText(String msg) throws IOException {
+        binOut.writeUTF(msg);
+        binOut.flush();
     }
 
-    // ── Utilitaires ──────────────────────────────────────────────
+    /**
+     * ✅ FIX : envoi binaire (phase CHAT) — binOut toujours initialisé
+     */
+    public synchronized void send(String type, String senderPhone,
+                                  String filename, byte[] data) throws IOException {
+        if (binOut == null) {
+            System.err.println("[Server] binOut null pour " + tag());
+            return;
+        }
+        binOut.writeUTF(type);
+        binOut.writeUTF(senderPhone != null ? senderPhone : "");
+        binOut.writeUTF("");                          // receiverPhone (non utilisé côté client)
+        binOut.writeUTF(filename != null ? filename : "");
+        binOut.writeInt(data != null ? data.length : 0);
+        if (data != null && data.length > 0) binOut.write(data);
+        binOut.flush();
+    }
 
-
+    // ── DISCONNECT ────────────────────────────────────────────────────────────
 
     private void disconnect() {
         if (userId != -1) {
@@ -305,7 +312,8 @@ public class ClientHandler extends Thread {
     }
 
     private String tag() {
-        return username != null ? username + "(id=" + userId + ")"
+        return username != null
+                ? username + "(id=" + userId + ")"
                 : socket.getInetAddress().toString();
     }
 }

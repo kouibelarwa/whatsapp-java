@@ -4,103 +4,65 @@ import java.io.*;
 import java.net.Socket;
 
 public class SocketManager {
-
     private static SocketManager instance;
-
     private Socket socket;
-
-    // AUTH
-    private PrintWriter textOut;
-    private BufferedReader textIn;
-
-    // BINARY CHAT
     private DataOutputStream binOut;
     private DataInputStream binIn;
 
-    private int    userId    = -1;
+    private int userId;      // Ajouté pour stocker l'ID
     private String userPhone;
     private boolean authenticated = false;
 
     private SocketManager() {}
 
-    public static synchronized void reset() {
-        if (instance != null) {
-            try { instance.socket.close(); } catch (Exception ignored) {}
-            instance = null;
-        }
+    public static synchronized SocketManager getInstance() {
+        if (instance == null) instance = new SocketManager();
+        return instance;
     }
 
-    // =========================
-    // AUTH MODE (TEXT)
-    // =========================
-    public void initAuth(Socket socket, int userId, String phone) throws IOException {
-        this.socket    = socket;
-        this.userId    = userId;
+    // --- MÉTHODES MANQUANTES À AJOUTER ---
+    public void setUserPhone(String phone) {
         this.userPhone = phone;
-        this.textOut   = new PrintWriter(socket.getOutputStream(), true);
-        this.textIn    = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-        this.authenticated = false;
     }
-    // =========================
-    // SWITCH TO BINARY MODE
-    // =========================
+
+    public void setUserId(int userId) {
+        this.userId = userId;
+    }
+    // -------------------------------------
+
     public void enableBinaryMode() throws IOException {
-        if (textOut != null) textOut.flush();
         this.binOut = new DataOutputStream(socket.getOutputStream());
-        this.binIn  = new DataInputStream(socket.getInputStream());
+        this.binIn = new DataInputStream(socket.getInputStream());
         this.authenticated = true;
     }
 
-    // =========================
-    // SEND BINARY MESSAGE
-    // =========================
     public synchronized void sendBinary(String type, String receiver, String filename, byte[] data) {
-
         try {
-            if (binOut == null) {
-                System.err.println("Binary not initialized");
-                return;
-            }
-
+            if (binOut == null) return;
             binOut.writeUTF(type);
             binOut.writeUTF(receiver);
-            binOut.writeUTF(userPhone);
-            binOut.writeUTF(filename == null ? "" : filename);
-
+            binOut.writeUTF(userPhone != null ? userPhone : "");
+            binOut.writeUTF(filename != null ? filename : "");
             binOut.writeInt(data.length);
             binOut.write(data);
             binOut.flush();
-
         } catch (Exception e) {
-            System.err.println("sendBinary error: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
-    // =========================
-    // SEND EVENT (CALL ETC)
-    // =========================
-    public void sendMessage(String receiver, String text) {
-        sendBinary("TEXT", receiver, "", text.getBytes());
-    }
-    public void sendEvent(String event) {
-        textOut.println(event);
-    }
-
-    // =========================
-    // LISTENER
-    // =========================
     public void startListening(MessageListener listener) {
-
         new Thread(() -> {
             try {
                 while (true) {
                     String type     = binIn.readUTF();
                     String sender   = binIn.readUTF();
-                    String filename = binIn.readUTF();
+                    String ignored  = binIn.readUTF(); // ✅ receiverPhone (ignoré)
+                    String filename = binIn.readUTF(); // ✅ filename correct
                     int size        = binIn.readInt();
                     byte[] data     = new byte[size];
                     binIn.readFully(data);
-                    listener.onMessage(type, sender, filename, data);  // ✅ 4 paramètres
+                    listener.onMessage(type, sender, filename, data);
                 }
             } catch (Exception e) {
                 listener.onDisconnect();
@@ -109,47 +71,19 @@ public class SocketManager {
     }
 
     public interface MessageListener {
-        void onMessage(String type, String sender,
-                       String filename, byte[] data);  // ✅ 4 paramètres
+        void onMessage(String type, String sender, String filename, byte[] data);
         void onDisconnect();
     }
 
-    // GETTERS
-
-    public int getUserId() {
-        return userId;
+    public void initAuth(Socket s, int id, String p) {
+        this.socket = s;
+        this.userId = id;
+        this.userPhone = p;
     }
 
-    public String getUserPhone() {
-        return userPhone;
-    }
-
-    public static synchronized SocketManager getInstance() {
-        if (instance == null) instance = new SocketManager();
-        return instance;
-    }
-
-    public Socket getSocket() {
-        return socket;
-    }
-
-    public PrintWriter getTextOut() {
-        return textOut;
-    }
-
-    public BufferedReader getTextIn() {
-        return textIn;
-    }
-
-    public DataOutputStream getBinOut() {
-        return binOut;
-    }
-
-    public DataInputStream getBinIn() {
-        return binIn;
-    }
-
-    public boolean isAuthenticated() {
-        return authenticated;
+    public static void reset() {
+        try { if(instance != null && instance.socket != null) instance.socket.close(); }
+        catch(Exception e){}
+        instance = null;
     }
 }

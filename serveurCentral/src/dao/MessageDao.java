@@ -8,11 +8,8 @@ import java.util.List;
 public class MessageDao {
 
     /**
-     * Sauvegarde TOUJOURS en NOT_DELIVERED d'abord.
+     * Sauvegarde un message (texte ou binaire).
      * Retourne l'ID généré.
-     *
-     * text   → content VARCHAR, data NULL
-     * binary → data LONGBLOB,   content NULL
      */
     public int save(Message m, byte[] data) {
         String sql = "INSERT INTO messages"
@@ -45,9 +42,50 @@ public class MessageDao {
     }
 
     /**
-     * Récupère les messages NOT_DELIVERED pour un receiver_id.
-     * Les BLOB ne sont PAS chargés ici (trop lourd).
-     * Utiliser getDataById() séparément pour les binaires.
+     * Récupère la conversation complète entre deux utilisateurs.
+     * Utilisé par ConversationView pour charger l'historique.
+     */
+    public List<Message> getConversation(int userId1, int userId2) {
+        List<Message> list = new ArrayList<>();
+
+        if (userId1 == -1 || userId2 == -1) return list;
+
+        String sql = "SELECT m.id, m.sender_id, m.receiver_id, "
+                + "m.type, m.filename, m.content, m.etat, "
+                + "u.phone AS sender_phone "
+                + "FROM messages m "
+                + "JOIN users u ON u.id = m.sender_id "
+                + "WHERE (m.sender_id = ? AND m.receiver_id = ?) "
+                + "   OR (m.sender_id = ? AND m.receiver_id = ?) "
+                + "ORDER BY m.sent_at ASC";
+
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setInt(1, userId1);
+            ps.setInt(2, userId2);
+            ps.setInt(3, userId2);
+            ps.setInt(4, userId1);
+
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                list.add(new Message(
+                        rs.getInt("id"),
+                        rs.getInt("sender_id"),
+                        rs.getString("sender_phone"),
+                        rs.getInt("receiver_id"),
+                        rs.getString("type"),
+                        rs.getString("filename"),
+                        rs.getString("content"),
+                        rs.getString("etat")
+                ));
+            }
+        } catch (Exception e) { e.printStackTrace(); }
+        return list;
+    }
+
+    /**
+     * Récupère les messages non délivrés pour un receiver_id.
      */
     public List<Message> getUndelivered(int receiverId) {
         List<Message> list = new ArrayList<>();
@@ -98,6 +136,18 @@ public class MessageDao {
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, etat);
             ps.setInt(2, id);
+            ps.executeUpdate();
+        } catch (Exception e) { e.printStackTrace(); }
+    }
+
+    /** Marque tous les messages d'un expéditeur vers un destinataire comme READ. */
+    public void markAllAsRead(int senderId, int receiverId) {
+        String sql = "UPDATE messages SET etat = 'READ' "
+                + "WHERE sender_id = ? AND receiver_id = ? AND etat != 'READ'";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, senderId);
+            ps.setInt(2, receiverId);
             ps.executeUpdate();
         } catch (Exception e) { e.printStackTrace(); }
     }

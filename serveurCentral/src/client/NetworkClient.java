@@ -4,40 +4,51 @@ import java.io.*;
 import java.net.Socket;
 
 public class NetworkClient {
-
     private final String host;
-    private final int    port;
-
-    private Socket         socket;
-    private PrintWriter    out;
-    private BufferedReader in;
+    private final int port;
+    private Socket socket;
+    private DataOutputStream out;
+    private DataInputStream in;
 
     public NetworkClient(String host, int port) {
         this.host = host;
         this.port = port;
     }
 
-    /** Ouvre la connexion (appelé une seule fois au démarrage) */
-    public void connect() throws IOException {
-        socket = new Socket(host, port);
-        out    = new PrintWriter(socket.getOutputStream(), true);
-        in     = new BufferedReader(
-                new InputStreamReader(socket.getInputStream()));
+    // Connexion automatique sécurisée
+    private void ensureConnected() throws IOException {
+        if (socket == null || socket.isClosed() || out == null || in == null) {
+            socket = new Socket(host, port);
+            out = new DataOutputStream(socket.getOutputStream());
+            in = new DataInputStream(socket.getInputStream());
+        }
     }
 
-    /** Envoie une ligne et retourne la réponse */
     public String send(String message) {
         try {
-            out.println(message);
-            return in.readLine();
+            // 1. On s'assure d'être connecté avant d'envoyer
+            ensureConnected();
+
+            // 2. Envoi
+            out.writeUTF(message);
+            out.flush();
+
+            // 3. Réception
+            return in.readUTF();
         } catch (Exception e) {
-            System.err.println("Network error: " + e.getMessage());
+            System.err.println("ERREUR RÉSEAU : " + e.getMessage());
+            // Si une erreur survient, on réinitialise pour la prochaine fois
+            try { if (socket != null) socket.close(); } catch (Exception ignored) {}
+            socket = null;
             return null;
         }
     }
 
-    public void close() {
-        try { if (socket != null) socket.close(); }
-        catch (IOException ignored) {}
+    public void connect() throws IOException {
+        ensureConnected();
+    }
+    // ✅ NOUVEAU : expose le socket actif pour SocketManager
+    public Socket getSocket() {
+        return socket;
     }
 }

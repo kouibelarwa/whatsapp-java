@@ -5,148 +5,73 @@ import dao.UserDao;
 import model.User;
 import server.ChatServer;
 import server.ClientHandler;
-
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-/**
- * ContactService — gestion des contacts côté serveur.
- *
- * PROTOCOLE (signaux binaire type "CONTACT_SIGNAL") :
- *
- *   Client → Serveur : CONTACT_SIGNAL
- *             data   = "ADD:phone_du_contact"
- *                    | "REMOVE:phone_du_contact"
- *                    | "GET_CONTACTS"
- *                    | "SEARCH:phone"
- *
- *   Serveur → Client : CONTACT_SIGNAL
- *             data   = "ADD_OK:phone:username"
- *                    | "ADD_FAIL:REASON"
- *                    | "REMOVE_OK"
- *                    | "CONTACTS_LIST:phone1:username1:status1|phone2:username2:status2|..."
- *                    | "SEARCH_RESULT:phone:username"
- *                    | "SEARCH_NOT_FOUND"
- */
 public class Contactservice {
-
     private final ContactDao contactDao = new ContactDao();
-    private final UserDao    userDao    = new UserDao();
+    private final UserDao userDao = new UserDao();
 
-    /**
-     * Point d'entrée unique.
-     * Reçoit la commande depuis ClientHandler et dispatch.
-     */
-    public void handle(int userId, String userPhone,
-                       String payload, ClientHandler handler) {
-
+    public void handle(int userId, String userPhone, String payload, ClientHandler handler) {
         if (payload.startsWith("ADD:")) {
-            String targetPhone = payload.substring(4).trim();
-            handleAdd(userId, targetPhone, handler);
+            String[] parts = payload.substring(4).split(":", 2);
+            String targetPhone = parts[0].trim();
+            String nickname = parts.length > 1 ? parts[1].trim() : null;
+
+            // ✅ Empêcher de s'ajouter soi-même
+            if (targetPhone.equals(userPhone)) {
+                sendResponse(handler, "ADD_FAIL:SELF");
+                return;
+            }
+
+            User target = userDao.getByPhone(targetPhone);
+
+            System.out.println("[Contactservice] ADD demandé : " + targetPhone
+                    + " → trouvé : " + (target != null ? target.getId() : "NULL")); // DEBUG
+
+            if (target != null) {
+                boolean added = contactDao.addContact(userId, target.getId(), nickname);
+                System.out.println("[Contactservice] addContact résultat : " + added); // DEBUG
+                handleGet(userId, handler);
+            } else {
+                sendResponse(handler, "ADD_FAIL:NOT_FOUND");
+            }
+
+        } else if (payload.equals("GET_CONTACTS")) {
+            handleGet(userId, handler);
 
         } else if (payload.startsWith("REMOVE:")) {
             String targetPhone = payload.substring(7).trim();
-            handleRemove(userId, targetPhone, handler);
-
-        } else if ("GET_CONTACTS".equals(payload)) {
-            handleGetContacts(userId, handler);
-
-        } else if (payload.startsWith("SEARCH:")) {
-            String searchPhone = payload.substring(7).trim();
-            handleSearch(searchPhone, handler);
-
-        } else {
-            sendContactSignal(handler, "ADD_FAIL:UNKNOWN_COMMAND");
+            User target = userDao.getByPhone(targetPhone);
+            if (target != null) {
+                contactDao.removeContact(userId, target.getId());
+            }
+            handleGet(userId, handler); // ✅ Renvoyer la liste après suppression
         }
     }
 
-    // ── Ajouter un contact ───────────────────────────────────────
 
-    private void handleAdd(int ownerId, String targetPhone,
-                           ClientHandler handler) {
-        // Chercher l'utilisateur cible par son phone
-        User target = userDao.getByPhone(targetPhone);
-
-        if (target == null) {
-            sendContactSignal(handler, "ADD_FAIL:USER_NOT_FOUND");
-            return;
-        }
-        if (target.getId() == ownerId) {
-            sendContactSignal(handler, "ADD_FAIL:CANNOT_ADD_YOURSELF");
-            return;
-        }
-        if (contactDao.contactExists(ownerId, target.getId())) {
-            sendContactSignal(handler, "ADD_FAIL:ALREADY_EXISTS");
-            return;
-        }
-
-        contactDao.addContact(ownerId, target.getId(), null);
-        sendContactSignal(handler,
-                "ADD_OK:" + target.getPhone() + ":" + target.getUsername());
-
-        System.out.println("[Contact] " + ownerId
-                + " a ajouté " + targetPhone);
-    }
-
-    // ── Supprimer un contact ─────────────────────────────────────
-
-    private void handleRemove(int ownerId, String targetPhone,
-                              ClientHandler handler) {
-        User target = userDao.getByPhone(targetPhone);
-        if (target == null) {
-            sendContactSignal(handler, "ADD_FAIL:USER_NOT_FOUND");
-            return;
-        }
-        contactDao.removeContact(ownerId, target.getId());
-        sendContactSignal(handler, "REMOVE_OK");
-    }
-
-    // ── Récupérer la liste des contacts ──────────────────────────
-
-    private void handleGetContacts(int ownerId, ClientHandler handler) {
-        List<User> contacts = contactDao.getContacts(ownerId);
-
-        if (contacts.isEmpty()) {
-            sendContactSignal(handler, "CONTACTS_LIST:");
-            return;
-        }
-
-        // Format : phone1:username1:status1|phone2:username2:status2|...
+    public void handleGet(int userId, ClientHandler handler) {
+        List<String[]> list = contactDao.getContactsWithNickname(userId);
         StringBuilder sb = new StringBuilder("CONTACTS_LIST:");
-        for (int i = 0; i < contacts.size(); i++) {
-            User u = contacts.get(i);
-            // Vérifier le statut réel dans la map des connectés
-            boolean online = ChatServer.clients.containsKey(u.getId());
-            String status  = online ? "ONLINE" : "OFFLINE";
-            sb.append(u.getPhone())
-                    .append(":").append(u.getUsername())
-                    .append(":").append(status);
-            if (i < contacts.size() - 1) sb.append("|");
+        for (String[] c : list) {
+            int contactId = Integer.parseInt(c[0]);
+            String phone    = c[1];
+            String username = c[2];
+            String status   = ChatServer.clients.containsKey(contactId) ? "ONLINE" : "OFFLINE";
+            String nickname = c[4];
+            String displayName = (nickname != null && !nickname.isEmpty()) ? nickname : username;
+            sb.append(phone).append(":").append(displayName).append(":").append(status).append("|");
         }
-        sendContactSignal(handler, sb.toString());
+        sendResponse(handler, sb.toString());
     }
 
-    // ── Rechercher un utilisateur par phone ──────────────────────
-
-    private void handleSearch(String phone, ClientHandler handler) {
-        User found = userDao.searchByPhone(phone);
-        if (found == null || !found.isVerified()) {
-            sendContactSignal(handler, "SEARCH_NOT_FOUND");
-        } else {
-            sendContactSignal(handler,
-                    "SEARCH_RESULT:" + found.getPhone()
-                            + ":" + found.getUsername());
-        }
-    }
-
-    // ── Envoi du signal vers le client ───────────────────────────
-
-    private void sendContactSignal(ClientHandler handler, String payload) {
+    private void sendResponse(ClientHandler handler, String msg) {
         try {
-            handler.send("CONTACT_SIGNAL", "",
-                    "", payload.getBytes(StandardCharsets.UTF_8));
+            // ✅ Format binaire pour que le client reçoive correctement
+            handler.send("CONTACT_SIGNAL", "SERVER", "", msg.getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
-            System.err.println("[Contact] Envoi échoué : " + e.getMessage());
+            e.printStackTrace();
         }
     }
 }
