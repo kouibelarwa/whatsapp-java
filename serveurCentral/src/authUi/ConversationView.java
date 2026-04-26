@@ -14,14 +14,6 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-/**
- * ConversationView — ✅ CORRIGÉ COMPLET :
- * - Boutons WhatsApp-style visibles et fonctionnels
- * - Enregistrement audio RÉEL (appui long = enregistre, relâche = envoie)
- * - Messages défilent en temps réel
- * - clearMessages() fonctionne vraiment
- * - sendText() affiche immédiatement côté envoyeur
- */
 public class ConversationView extends JPanel {
 
     private final int    myUserId;
@@ -39,7 +31,6 @@ public class ConversationView extends JPanel {
     private JButton     btnAudio;
     private JLabel      recLabel;
 
-    // ✅ FIX AUDIO : variables d'enregistrement
     private TargetDataLine        micLine;
     private ByteArrayOutputStream audioBuffer;
     private volatile boolean      recording = false;
@@ -48,7 +39,6 @@ public class ConversationView extends JPanel {
     private final MessageDao messageDao = new MessageDao();
     private final UserDao    userDao    = new UserDao();
 
-    // ── Couleurs WhatsApp dark ───────────────────────────────────
     private static final Color BG_DARK        = new Color(11,  20,  14);
     private static final Color BG_MESSAGES    = new Color(14,  22,  16);
     private static final Color BG_INPUT       = new Color(21,  30,  24);
@@ -81,16 +71,13 @@ public class ConversationView extends JPanel {
         if (contactId != -1) messageDao.markAllAsRead(contactId, myUserId);
     }
 
-    // ────────────────────────────────────────────────────────────
-    // HEADER
-    // ────────────────────────────────────────────────────────────
+    // ── HEADER ──────────────────────────────────────────────────
     private void buildHeader() {
         JPanel header = new JPanel(new BorderLayout());
         header.setBackground(BG_HEADER);
         header.setBorder(new EmptyBorder(10, 14, 10, 14));
         header.setPreferredSize(new Dimension(0, 64));
 
-        // Avatar + infos
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         left.setOpaque(false);
         JPanel avatar = buildAvatar(contactName, 42);
@@ -113,14 +100,13 @@ public class ConversationView extends JPanel {
         left.add(avatar);
         left.add(info);
 
-        // Boutons d'appel (droite)
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         right.setOpaque(false);
 
-        JButton btnAudioCall = makeHeaderBtn("📞", "Appel audio");
+        JButton btnAudioCall = makeHeaderBtn("Tel", "Appel audio");
         btnAudioCall.addActionListener(e -> startCall("audio"));
 
-        JButton btnVideoCall = makeHeaderBtn("📹", "Appel vidéo");
+        JButton btnVideoCall = makeHeaderBtn("Vid", "Appel video");
         btnVideoCall.addActionListener(e -> startCall("video"));
 
         right.add(btnAudioCall);
@@ -129,7 +115,6 @@ public class ConversationView extends JPanel {
         header.add(left,  BorderLayout.WEST);
         header.add(right, BorderLayout.EAST);
 
-        // Séparateur
         JPanel sep = new JPanel();
         sep.setBackground(new Color(30, 45, 35));
         sep.setPreferredSize(new Dimension(0, 1));
@@ -141,9 +126,7 @@ public class ConversationView extends JPanel {
         add(wrap, BorderLayout.NORTH);
     }
 
-    // ────────────────────────────────────────────────────────────
-    // ZONE DE MESSAGES
-    // ────────────────────────────────────────────────────────────
+    // ── ZONE DE MESSAGES ─────────────────────────────────────────
     private void buildMessages() {
         messagesPanel = new JPanel();
         messagesPanel.setLayout(new BoxLayout(messagesPanel, BoxLayout.Y_AXIS));
@@ -159,27 +142,22 @@ public class ConversationView extends JPanel {
         add(scrollPane, BorderLayout.CENTER);
     }
 
-    // ────────────────────────────────────────────────────────────
-    // BARRE D'ENTRÉE — Style WhatsApp avec boutons bien visibles
-    // ────────────────────────────────────────────────────────────
+    // ── BARRE D'ENTRÉE ───────────────────────────────────────────
     private void buildInputBar() {
         JPanel inputBar = new JPanel(new BorderLayout(8, 0));
         inputBar.setBackground(BG_INPUT);
         inputBar.setBorder(new EmptyBorder(10, 10, 10, 10));
 
-        // ── Boutons gauche ──
-        JButton btnEmoji = makeRoundBtn("😊", "Emojis", 40, BG_INPUT_FIELD);
-        btnEmoji.addActionListener(e -> showEmojiPicker());
-
-        JButton btnFile = makeRoundBtn("📎", "Fichier", 40, BG_INPUT_FIELD);
+        // ── Bouton fichier seulement (emoji supprimé) ──
+        JButton btnFile = makeRoundBtn("[F]", "Fichier", 40, BG_INPUT_FIELD);
+        btnFile.setFont(new Font("Segoe UI", Font.BOLD, 14));
         btnFile.addActionListener(e -> sendFile());
 
         JPanel leftBtns = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
         leftBtns.setOpaque(false);
-        leftBtns.add(btnEmoji);
         leftBtns.add(btnFile);
 
-        // ── Champ de texte + label REC ──
+        // ── Champ de texte ──
         textField = new JTextField();
         textField.setBackground(BG_INPUT_FIELD);
         textField.setForeground(COLOR_TEXT);
@@ -188,11 +166,10 @@ public class ConversationView extends JPanel {
                 BorderFactory.createLineBorder(new Color(60, 80, 65), 1, true),
                 new EmptyBorder(10, 14, 10, 14)));
         textField.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        textField.setToolTipText("Écrire un message…");
+        textField.setToolTipText("Ecrire un message...");
         textField.addActionListener(e -> sendText());
 
-        // Label enregistrement (visible pendant rec)
-        recLabel = new JLabel(" 🔴  Enregistrement… relâchez pour envoyer");
+        recLabel = new JLabel("  [REC] Enregistrement... cliquez pour envoyer");
         recLabel.setForeground(COLOR_RED);
         recLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
         recLabel.setVisible(false);
@@ -203,33 +180,25 @@ public class ConversationView extends JPanel {
         centerPanel.add(textField, BorderLayout.CENTER);
         centerPanel.add(recLabel,  BorderLayout.EAST);
 
-        // ── Boutons droite : AUDIO + SEND ──
-        //
-        // ✅ FIX AUDIO PRINCIPAL :
-        //   - mousePressed  → demander permission + démarrer enregistrement
-        //   - mouseReleased → arrêter + envoyer
-        //   - On affiche btn SEND quand du texte est tapé, btn MIC sinon
-        //
-        btnAudio = makeRoundBtn("🎤", "Maintenir pour enregistrer", 44, COLOR_GREEN);
-        btnAudio.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 20));
-        btnAudio.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mousePressed(MouseEvent e) {
-                if (!recording) startRecording();
-            }
-            @Override
-            public void mouseReleased(MouseEvent e) {
-                if (recording) stopAndSendRecording();
+        // ── Boutons droite ──
+        btnAudio = makeRoundBtn("[M]", "Cliquer pour enregistrer", 44, COLOR_GREEN);
+        btnAudio.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        btnAudio.addActionListener(e -> {
+            if (!recording) {
+                startRecording();
+                btnAudio.setToolTipText("Cliquez pour arreter et envoyer");
+            } else {
+                stopAndSendRecording();
+                btnAudio.setToolTipText("Cliquer pour enregistrer");
             }
         });
 
-        btnSend = makeRoundBtn("➤", "Envoyer", 44, COLOR_GREEN);
+        btnSend = makeRoundBtn(">", "Envoyer", 44, COLOR_GREEN);
         btnSend.setFont(new Font("Segoe UI", Font.BOLD, 18));
         btnSend.setForeground(Color.WHITE);
         btnSend.addActionListener(e -> sendText());
-        btnSend.setVisible(false); // caché au départ, visible quand texte présent
+        btnSend.setVisible(false);
 
-        // Affiche SEND si texte, MIC sinon
         textField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             void update() {
                 boolean hasText = !textField.getText().isEmpty();
@@ -261,42 +230,37 @@ public class ConversationView extends JPanel {
         add(wrap, BorderLayout.SOUTH);
     }
 
-    // ────────────────────────────────────────────────────────────
-    // HISTORIQUE
-    // ────────────────────────────────────────────────────────────
+    // ── HISTORIQUE ───────────────────────────────────────────────
     private void loadHistory() {
         if (contactId == -1) return;
         List<Message> history = messageDao.getConversation(myUserId, contactId);
         for (Message m : history) {
             boolean mine = m.getSenderId() == myUserId;
-            if (m.isText())
+            if (m.isText()) {
                 addMessageBubble(m.getContent(), mine, m.getEtat());
-            else
-                addFileBubble(m.getType(), m.getFilename(), mine, m.getEtat(), null);
+            } else {
+                // ✅ Charger les données binaires depuis la DB
+                byte[] data = messageDao.getDataById(m.getId());
+                addFileBubble(m.getType(), m.getFilename(), mine, m.getEtat(), data);
+            }
         }
         scrollToBottom();
     }
 
-    // ────────────────────────────────────────────────────────────
-    // ENVOI TEXTE — ✅ Affichage immédiat côté envoyeur
-    // ────────────────────────────────────────────────────────────
+    // ── ENVOI TEXTE ──────────────────────────────────────────────
     private void sendText() {
         String text = textField.getText().trim();
         if (text.isEmpty()) return;
-        textField.setText(""); // vider immédiatement
-        // Affichage côté envoyeur AVANT l'envoi réseau (sensation WhatsApp)
+        textField.setText("");
         addMessageBubble(text, true, "SENT");
         scrollToBottom();
-        // Envoi réseau en background
         new Thread(() ->
                 SocketManager.getInstance().sendBinary(
                         "text", contactPhone, "", text.getBytes(StandardCharsets.UTF_8))
         ).start();
     }
 
-    // ────────────────────────────────────────────────────────────
-    // RÉCEPTION MESSAGE
-    // ────────────────────────────────────────────────────────────
+    // ── RÉCEPTION MESSAGE ────────────────────────────────────────
     public void receiveMessage(String type, String filename, byte[] data) {
         SwingUtilities.invokeLater(() -> {
             if ("text".equals(type))
@@ -304,17 +268,17 @@ public class ConversationView extends JPanel {
                         new String(data, StandardCharsets.UTF_8), false, "READ");
             else if ("audio".equals(type))
                 addFileBubble(type, filename, false, "READ", data);
+            else if ("image".equals(type))
+                addFileBubble(type, filename, false, "READ", data);
             else
-                addFileBubble(type, filename, false, "READ", null);
+                addFileBubble(type, filename, false, "READ", data);
             scrollToBottom();
             if (contactId != -1)
                 messageDao.markAllAsRead(contactId, myUserId);
         });
     }
 
-    // ────────────────────────────────────────────────────────────
-    // MISE À JOUR STATUT
-    // ────────────────────────────────────────────────────────────
+    // ── MISE À JOUR STATUT ───────────────────────────────────────
     public void updateContactStatus(String newStatus) {
         this.contactStatus = newStatus;
         if (statusLabel != null) SwingUtilities.invokeLater(() -> {
@@ -324,9 +288,7 @@ public class ConversationView extends JPanel {
         });
     }
 
-    // ────────────────────────────────────────────────────────────
-    // ✅ FIX SUPPRESSION CONTACT : vide vraiment le panel
-    // ────────────────────────────────────────────────────────────
+    // ── CLEAR MESSAGES ───────────────────────────────────────────
     public void clearMessages() {
         SwingUtilities.invokeLater(() -> {
             messagesPanel.removeAll();
@@ -335,9 +297,7 @@ public class ConversationView extends JPanel {
         });
     }
 
-    // ────────────────────────────────────────────────────────────
-    // BULLES DE MESSAGES
-    // ────────────────────────────────────────────────────────────
+    // ── BULLE TEXTE ──────────────────────────────────────────────
     private void addMessageBubble(String text, boolean mine, String etat) {
         JPanel wrapper = new JPanel(
                 new FlowLayout(mine ? FlowLayout.RIGHT : FlowLayout.LEFT, 6, 3));
@@ -371,11 +331,8 @@ public class ConversationView extends JPanel {
         ta.setFocusable(false);
         ta.setBorder(null);
         ta.setMaximumSize(new Dimension(maxW, Integer.MAX_VALUE));
-        FontMetrics fm = ta.getFontMetrics(ta.getFont());
-        ta.setPreferredSize(new Dimension(Math.min(fm.stringWidth(text) + 28, maxW), 10));
         bubble.add(ta);
 
-        // Heure + coches
         JPanel timeRow = new JPanel(
                 new FlowLayout(mine ? FlowLayout.RIGHT : FlowLayout.LEFT, 3, 0));
         timeRow.setOpaque(false);
@@ -389,9 +346,9 @@ public class ConversationView extends JPanel {
         if (mine) {
             String tick; Color col;
             switch (etat != null ? etat : "SENT") {
-                case "READ":      tick = "✓✓"; col = new Color(83, 182, 255); break;
-                case "DELIVERED": tick = "✓✓"; col = Color.LIGHT_GRAY;        break;
-                default:          tick = "✓";  col = Color.GRAY;              break;
+                case "READ":      tick = "vv"; col = new Color(83, 182, 255); break;
+                case "DELIVERED": tick = "vv"; col = Color.LIGHT_GRAY;        break;
+                default:          tick = "v";  col = Color.GRAY;              break;
             }
             JLabel tickLabel = new JLabel(tick);
             tickLabel.setForeground(col);
@@ -406,21 +363,105 @@ public class ConversationView extends JPanel {
         messagesPanel.repaint();
     }
 
+    // ── BULLE FICHIER ✅ CORRIGÉE ────────────────────────────────
     private void addFileBubble(String type, String filename,
-                               boolean mine, String etat, byte[] audioData) {
+                               boolean mine, String etat, byte[] fileData) {
         if ("audio".equals(type)) {
-            addAudioBubble(filename, mine, etat, audioData);
+            addAudioBubble(filename, mine, etat, fileData);
             return;
         }
-        String icon = switch (type != null ? type : "") {
-            case "video" -> "🎬 "; case "image" -> "🖼️ "; default -> "📄 ";
+
+        // Icône texte selon type
+        String icon;
+        switch (type != null ? type : "") {
+            case "video":
+                icon = "[Video]";
+                break;
+            case "image":
+                icon = "[Image]";
+                break;
+            default:
+                icon = "[Fichier]";
+                break;
+        }
+
+        JPanel wrapper = new JPanel(
+                new FlowLayout(mine ? FlowLayout.RIGHT : FlowLayout.LEFT, 6, 3));
+        wrapper.setOpaque(false);
+        wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
+
+        final Color bg = mine ? COLOR_SENT : COLOR_RECV;
+        JPanel bubble = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                        RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(bg);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 18, 18);
+                g2.dispose();
+                super.paintComponent(g);
+            }
         };
-        addMessageBubble(icon + (filename != null ? filename : type), mine, etat);
+        bubble.setLayout(new BoxLayout(bubble, BoxLayout.Y_AXIS));
+        bubble.setOpaque(false);
+        bubble.setBorder(new EmptyBorder(10, 14, 8, 14));
+
+        // Nom du fichier
+        JLabel nameLabel = new JLabel(icon + " " + (filename != null ? filename : type));
+        nameLabel.setForeground(Color.WHITE);
+        nameLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        bubble.add(nameLabel);
+
+        // ✅ Bouton telecharger si données disponibles
+        if (fileData != null && fileData.length > 0) {
+            JButton btnDl = new JButton("Telecharger");
+            btnDl.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            btnDl.setForeground(Color.WHITE);
+            btnDl.setBackground(new Color(0, 120, 100));
+            btnDl.setBorderPainted(false);
+            btnDl.setFocusPainted(false);
+            btnDl.setOpaque(true);
+            btnDl.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            final byte[] dataToSave = fileData;
+            final String fname = filename;
+            btnDl.addActionListener(e -> {
+                JFileChooser chooser = new JFileChooser();
+                chooser.setSelectedFile(new File(fname != null ? fname : "fichier"));
+                if (chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+                    try {
+                        java.nio.file.Files.write(
+                                chooser.getSelectedFile().toPath(), dataToSave);
+                        JOptionPane.showMessageDialog(this, "Fichier sauvegarde !");
+                    } catch (IOException ex) {
+                        JOptionPane.showMessageDialog(this,
+                                "Erreur : " + ex.getMessage());
+                    }
+                }
+            });
+            bubble.add(Box.createVerticalStrut(6));
+            bubble.add(btnDl);
+        }
+
+        // Heure
+        JPanel timeRow = new JPanel(
+                new FlowLayout(mine ? FlowLayout.RIGHT : FlowLayout.LEFT, 3, 0));
+        timeRow.setOpaque(false);
+        java.time.LocalTime now = java.time.LocalTime.now();
+        JLabel tl = new JLabel(String.format("%02d:%02d", now.getHour(), now.getMinute()));
+        tl.setForeground(COLOR_TIME);
+        tl.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+        timeRow.add(tl);
+        bubble.add(timeRow);
+
+        wrapper.add(bubble);
+        messagesPanel.add(wrapper);
+        messagesPanel.add(Box.createVerticalStrut(2));
+        messagesPanel.revalidate();
+        messagesPanel.repaint();
     }
 
-    // ────────────────────────────────────────────────────────────
-    // BULLE AUDIO — ✅ Avec vrai bouton play et WavePanel
-    // ────────────────────────────────────────────────────────────
+    // ── BULLE AUDIO ──────────────────────────────────────────────
     private void addAudioBubble(String filename, boolean mine,
                                 String etat, byte[] audioData) {
         JPanel wrapper = new JPanel(
@@ -447,12 +488,11 @@ public class ConversationView extends JPanel {
         JPanel audioRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         audioRow.setOpaque(false);
 
-        // Bouton Play bien visible
-        JButton playBtn = new JButton("▶");
-        playBtn.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        JButton playBtn = new JButton("Play");
+        playBtn.setFont(new Font("Segoe UI", Font.BOLD, 13));
         playBtn.setForeground(Color.WHITE);
         playBtn.setBackground(COLOR_GREEN);
-        playBtn.setPreferredSize(new Dimension(40, 40));
+        playBtn.setPreferredSize(new Dimension(55, 36));
         playBtn.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
         playBtn.setFocusPainted(false);
         playBtn.setOpaque(true);
@@ -460,7 +500,6 @@ public class ConversationView extends JPanel {
 
         WavePanel wavePanel = new WavePanel();
 
-        // Durée en secondes (estimée depuis la taille WAV)
         int secs = audioData != null
                 ? Math.max(1, (audioData.length - 44) / (44100 * 2)) : 5;
         JLabel durLabel = new JLabel("0:" + String.format("%02d", secs));
@@ -471,7 +510,6 @@ public class ConversationView extends JPanel {
             if (audioData != null && audioData.length > 44) {
                 playAudioBytes(audioData, playBtn, wavePanel);
             } else {
-                // Simulation si pas de données
                 playBtn.setEnabled(false);
                 new Thread(() -> {
                     for (int i = 0; i < 12; i++) {
@@ -481,7 +519,7 @@ public class ConversationView extends JPanel {
                         catch (InterruptedException ignored) {}
                     }
                     SwingUtilities.invokeLater(() -> {
-                        playBtn.setText("▶");
+                        playBtn.setText("Play");
                         playBtn.setEnabled(true);
                         wavePanel.setActive(-1);
                     });
@@ -494,7 +532,6 @@ public class ConversationView extends JPanel {
         audioRow.add(durLabel);
         bubble.add(audioRow);
 
-        // Heure
         JPanel timeRow = new JPanel(
                 new FlowLayout(mine ? FlowLayout.RIGHT : FlowLayout.LEFT, 3, 0));
         timeRow.setOpaque(false);
@@ -516,7 +553,7 @@ public class ConversationView extends JPanel {
         new Thread(() -> {
             try {
                 SwingUtilities.invokeLater(() -> {
-                    playBtn.setText("⏸");
+                    playBtn.setText("Stop");
                     playBtn.setEnabled(false);
                 });
                 AudioInputStream ais = AudioSystem.getAudioInputStream(
@@ -533,34 +570,28 @@ public class ConversationView extends JPanel {
                 clip.drain();
                 clip.close();
                 SwingUtilities.invokeLater(() -> {
-                    playBtn.setText("▶");
+                    playBtn.setText("Play");
                     playBtn.setEnabled(true);
                     wavePanel.setActive(-1);
                 });
             } catch (Exception e) {
                 e.printStackTrace();
                 SwingUtilities.invokeLater(() -> {
-                    playBtn.setText("▶");
+                    playBtn.setText("Play");
                     playBtn.setEnabled(true);
                 });
             }
         }, "AudioPlayer").start();
     }
 
-    // ────────────────────────────────────────────────────────────
-    // ✅ FIX AUDIO ENREGISTREMENT
-    //    1. Demande autorisation avant d'ouvrir la ligne
-    //    2. Démarre SEULEMENT si l'autorisation est accordée
-    //    3. Ne ferme PAS la boîte de dialogue tant qu'on n'a pas relâché
-    // ────────────────────────────────────────────────────────────
+    // ── ENREGISTREMENT AUDIO ─────────────────────────────────────
     private void startRecording() {
         AudioFormat fmt = new AudioFormat(44100, 16, 1, true, false);
         DataLine.Info info = new DataLine.Info(TargetDataLine.class, fmt);
 
         if (!AudioSystem.isLineSupported(info)) {
             JOptionPane.showMessageDialog(this,
-                    "Microphone non disponible !\n" +
-                            "Vérifiez les permissions dans les paramètres système.",
+                    "Microphone non disponible !",
                     "Microphone", JOptionPane.WARNING_MESSAGE);
             return;
         }
@@ -571,7 +602,7 @@ public class ConversationView extends JPanel {
             micLine.start();
         } catch (LineUnavailableException ex) {
             JOptionPane.showMessageDialog(this,
-                    "Impossible d'accéder au microphone :\n" + ex.getMessage(),
+                    "Impossible d'acceder au microphone : " + ex.getMessage(),
                     "Erreur micro", JOptionPane.ERROR_MESSAGE);
             return;
         }
@@ -579,14 +610,12 @@ public class ConversationView extends JPanel {
         audioBuffer = new ByteArrayOutputStream();
         recording   = true;
 
-        // UI : bouton rouge
         SwingUtilities.invokeLater(() -> {
             btnAudio.setBackground(COLOR_RED);
-            btnAudio.setText("🔴");
+            btnAudio.setText("[STOP]");
             recLabel.setVisible(true);
         });
 
-        // Thread de capture audio
         recorderThread = new Thread(() -> {
             byte[] buf = new byte[4096];
             while (recording) {
@@ -602,7 +631,6 @@ public class ConversationView extends JPanel {
         if (!recording) return;
         recording = false;
 
-        // Arrêt ligne micro
         if (micLine != null) {
             micLine.stop();
             micLine.drain();
@@ -613,20 +641,18 @@ public class ConversationView extends JPanel {
             catch (InterruptedException ignored) {}
         }
 
-        // UI : retour normal
         SwingUtilities.invokeLater(() -> {
             btnAudio.setBackground(COLOR_GREEN);
-            btnAudio.setText("🎤");
+            btnAudio.setText("[M]");
             recLabel.setVisible(false);
         });
 
         byte[] rawPCM = audioBuffer != null ? audioBuffer.toByteArray() : new byte[0];
 
-        // Durée minimale ~0.5s = 44100*2*0.5 = 44100 bytes
-        if (rawPCM.length < 44100) {
+        // ✅ Minimum 0.1 seconde
+        if (rawPCM.length < 8820) {
             JOptionPane.showMessageDialog(this,
-                    "Enregistrement trop court !\n" +
-                            "Maintenez le bouton 🎤 appuyé plus longtemps.",
+                    "Enregistrement trop court !\nCliquez pour demarrer, recliquez pour arreter.",
                     "Trop court", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
@@ -634,7 +660,6 @@ public class ConversationView extends JPanel {
         byte[] wavData = pcmToWav(rawPCM, 44100, 1, 16);
         String fname   = "audio_" + System.currentTimeMillis() + ".wav";
 
-        // Affichage immédiat + envoi
         addAudioBubble(fname, true, "SENT", wavData);
         scrollToBottom();
         new Thread(() ->
@@ -642,12 +667,10 @@ public class ConversationView extends JPanel {
         ).start();
     }
 
-    // ────────────────────────────────────────────────────────────
-    // ENVOI FICHIER
-    // ────────────────────────────────────────────────────────────
+    // ── ENVOI FICHIER ✅ CORRIGÉ ─────────────────────────────────
     private void sendFile() {
         JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("Choisir un fichier à envoyer");
+        chooser.setDialogTitle("Choisir un fichier a envoyer");
         if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
         File file = chooser.getSelectedFile();
         if (file.length() > 50L * 1024 * 1024) {
@@ -659,8 +682,8 @@ public class ConversationView extends JPanel {
             byte[] data = java.nio.file.Files.readAllBytes(file.toPath());
             String name = file.getName();
             String type = detectType(name);
-            addFileBubble(type, name, true, "SENT",
-                    "audio".equals(type) ? data : null);
+            // ✅ FIX : toujours passer data, jamais null
+            addFileBubble(type, name, true, "SENT", data);
             scrollToBottom();
             new Thread(() ->
                     SocketManager.getInstance().sendBinary(type, contactPhone, name, data)
@@ -678,53 +701,7 @@ public class ConversationView extends JPanel {
         return "file";
     }
 
-    // ────────────────────────────────────────────────────────────
-    // EMOJI PICKER
-    // ────────────────────────────────────────────────────────────
-    private void showEmojiPicker() {
-        String[] emojis = {
-                "😀","😂","😍","🥰","😎","😢","😡","🤔","👍","👎",
-                "❤️","🔥","🎉","🙏","💯","😊","🤣","😭","😱","🤗",
-                "🎵","🎬","📎","📸","🌍","🚀","💪","✅","⭐","🎁",
-                "👋","🤝","😴","🤯","🥳","🎂","🍕","☕","😏","🐱"
-        };
-        JDialog picker = new JDialog((Frame) SwingUtilities.getWindowAncestor(this));
-        picker.setUndecorated(true);
-        picker.setLayout(new GridLayout(4, 10, 2, 2));
-        picker.getContentPane().setBackground(new Color(28, 38, 30));
-        picker.getRootPane().setBorder(
-                BorderFactory.createLineBorder(new Color(50, 70, 55), 1));
-
-        for (String emoji : emojis) {
-            JButton btn = new JButton(emoji);
-            btn.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 20));
-            btn.setBorderPainted(false);
-            btn.setContentAreaFilled(false);
-            btn.setFocusPainted(false);
-            btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            btn.addActionListener(e -> {
-                textField.setText(textField.getText() + emoji);
-                textField.requestFocus();
-                picker.dispose();
-            });
-            picker.add(btn);
-        }
-        picker.pack();
-        try {
-            Point p = textField.getLocationOnScreen();
-            picker.setLocation(p.x, p.y - picker.getHeight() - 8);
-        } catch (Exception e) {
-            picker.setLocationRelativeTo(this);
-        }
-        picker.setVisible(true);
-        picker.addWindowFocusListener(new WindowAdapter() {
-            @Override public void windowLostFocus(WindowEvent e) { picker.dispose(); }
-        });
-    }
-
-    // ────────────────────────────────────────────────────────────
-    // APPEL
-    // ────────────────────────────────────────────────────────────
+    // ── APPEL ────────────────────────────────────────────────────
     private void startCall(String callType) {
         SocketManager.getInstance().sendBinary(
                 "CALL_SIGNAL", contactPhone, "",
@@ -738,9 +715,7 @@ public class ConversationView extends JPanel {
         callView.setVisible(true);
     }
 
-    // ────────────────────────────────────────────────────────────
-    // UTILITAIRES UI
-    // ────────────────────────────────────────────────────────────
+    // ── UTILITAIRES ──────────────────────────────────────────────
     private void scrollToBottom() {
         SwingUtilities.invokeLater(() -> {
             messagesPanel.revalidate();
@@ -773,7 +748,6 @@ public class ConversationView extends JPanel {
         return av;
     }
 
-    /** Bouton rond style WhatsApp pour la barre d'entrée */
     private JButton makeRoundBtn(String icon, String tooltip, int size, Color bg) {
         JButton btn = new JButton(icon) {
             @Override protected void paintComponent(Graphics g) {
@@ -786,7 +760,7 @@ public class ConversationView extends JPanel {
                 super.paintComponent(g);
             }
         };
-        btn.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 18));
+        btn.setFont(new Font("Segoe UI", Font.BOLD, 14));
         btn.setForeground(Color.WHITE);
         btn.setBackground(bg);
         btn.setOpaque(false);
@@ -801,7 +775,7 @@ public class ConversationView extends JPanel {
 
     private JButton makeHeaderBtn(String icon, String tooltip) {
         JButton btn = new JButton(icon);
-        btn.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 18));
+        btn.setFont(new Font("Segoe UI", Font.BOLD, 13));
         btn.setForeground(new Color(180, 190, 180));
         btn.setBackground(BG_HEADER);
         btn.setBorderPainted(false);
@@ -809,13 +783,11 @@ public class ConversationView extends JPanel {
         btn.setFocusPainted(false);
         btn.setToolTipText(tooltip);
         btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        btn.setPreferredSize(new Dimension(40, 40));
+        btn.setPreferredSize(new Dimension(50, 36));
         return btn;
     }
 
-    // ────────────────────────────────────────────────────────────
-    // PCM → WAV
-    // ────────────────────────────────────────────────────────────
+    // ── PCM → WAV ────────────────────────────────────────────────
     private byte[] pcmToWav(byte[] pcm, int sampleRate, int channels, int bitDepth) {
         int byteRate   = sampleRate * channels * bitDepth / 8;
         int blockAlign = channels * bitDepth / 8;
@@ -833,10 +805,12 @@ public class ConversationView extends JPanel {
         } catch (IOException ignored) {}
         return out.toByteArray();
     }
+
     private void writeInt(ByteArrayOutputStream o, int v) throws IOException {
         o.write(v & 0xFF); o.write((v >> 8) & 0xFF);
         o.write((v >> 16) & 0xFF); o.write((v >> 24) & 0xFF);
     }
+
     private void writeShort(ByteArrayOutputStream o, short v) throws IOException {
         o.write(v & 0xFF); o.write((v >> 8) & 0xFF);
     }
