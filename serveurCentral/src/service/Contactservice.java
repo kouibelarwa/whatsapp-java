@@ -43,10 +43,13 @@ public class Contactservice {
         } else if (payload.startsWith("REMOVE:")) {
             String targetPhone = payload.substring(7).trim();
             User target = userDao.getByPhone(targetPhone);
+            System.out.println("[Contactservice] REMOVE demandé : " + targetPhone
+                    + " → trouvé : " + (target != null ? target.getId() : "NULL")); // ✅ debug
             if (target != null) {
-                contactDao.removeContact(userId, target.getId());
+                boolean removed = contactDao.removeContact(userId, target.getId());
+                System.out.println("[Contactservice] removeContact résultat : " + removed);
             }
-            handleGet(userId, handler); // ✅ Renvoyer la liste après suppression
+            handleGet(userId, handler);
         }
     }
 
