@@ -291,9 +291,9 @@ public class ClientHandler extends Thread {
             return;
         }
         binOut.writeUTF(type);
-        binOut.writeUTF(senderPhone != null ? senderPhone : "");
+        binOut.writeUTF(senderPhone);
         binOut.writeUTF("");                          // receiverPhone (non utilisé côté client)
-        binOut.writeUTF(filename != null ? filename : "");
+        binOut.writeUTF(filename);
         binOut.writeInt(data != null ? data.length : 0);
         if (data != null && data.length > 0) binOut.write(data);
         binOut.flush();

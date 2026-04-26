@@ -74,19 +74,42 @@ public class CallView extends JDialog {
         root.add(buildControls(), BorderLayout.SOUTH);
         setContentPane(root);
     }
-
     private JPanel buildTitleBar() {
         JPanel bar = new JPanel(new BorderLayout());
         bar.setBackground(new Color(20, 26, 38));
         bar.setBorder(new EmptyBorder(10, 14, 10, 14));
         bar.setPreferredSize(new Dimension(0, 42));
 
-        JLabel title = new JLabel("video".equals(callType)
-                ? "📹  Appel vidéo" : "📞  Appel audio");
-        title.setForeground(new Color(180, 190, 210));
-        title.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        // ✅ Boutons Audio / Video cliquables
+        JPanel typeBtns = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        typeBtns.setOpaque(false);
 
-        JButton closeBtn = new JButton("✕");
+        JButton btnAudio = new JButton("Tel");
+        btnAudio.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        btnAudio.setForeground(Color.WHITE);
+        btnAudio.setBackground("audio".equals(callType)
+                ? GREEN : new Color(55, 65, 85));
+        btnAudio.setBorderPainted(false);
+        btnAudio.setFocusPainted(false);
+        btnAudio.setOpaque(true);
+        btnAudio.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        btnAudio.setPreferredSize(new Dimension(60, 26));
+
+        JButton btnVideo = new JButton("Video");
+        btnVideo.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        btnVideo.setForeground(Color.WHITE);
+        btnVideo.setBackground("video".equals(callType)
+                ? GREEN : new Color(55, 65, 85));
+        btnVideo.setBorderPainted(false);
+        btnVideo.setFocusPainted(false);
+        btnVideo.setOpaque(true);
+        btnVideo.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        btnVideo.setPreferredSize(new Dimension(60, 26));
+
+        typeBtns.add(btnAudio);
+        typeBtns.add(btnVideo);
+
+        JButton closeBtn = new JButton("X");
         closeBtn.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         closeBtn.setForeground(Color.GRAY);
         closeBtn.setBorderPainted(false);
@@ -102,13 +125,14 @@ public class CallView extends JDialog {
             @Override public void mouseDragged(MouseEvent e)  {
                 if (origin == null) return;
                 Point loc = getLocation();
-                setLocation(loc.x + e.getX() - origin.x, loc.y + e.getY() - origin.y);
+                setLocation(loc.x + e.getX() - origin.x,
+                        loc.y + e.getY() - origin.y);
             }
         };
         bar.addMouseListener(drag);
         bar.addMouseMotionListener(drag);
 
-        bar.add(title,    BorderLayout.WEST);
+        bar.add(typeBtns, BorderLayout.WEST);
         bar.add(closeBtn, BorderLayout.EAST);
         return bar;
     }

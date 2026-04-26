@@ -262,6 +262,10 @@ public class ChatView {
                     case "video":
                     case "image":
                     case "file": {
+                        System.out.println("[Debug] recu type=" + type
+                                + " sender='" + sender + "'"
+                                + " activeContact='" + activeContactPhone + "'"
+                                + " dataSize=" + (data != null ? data.length : 0));
                         SwingUtilities.invokeLater(() -> {
                             if (sender != null && sender.equals(activeContactPhone)
                                     && activeConversation != null) {
