@@ -207,6 +207,7 @@ public class ChatView {
                             ConversationView cachedConv = conversationCache.get(normalizedSender);
                             if (cachedConv == null && normalizedSender != null && !normalizedSender.isBlank()) {
                                 String senderForUi = sender;
+                                contactView.addDynamicContact(normalizedSender, senderForUi, "ONLINE");
                                 cachedConv = conversationCache.computeIfAbsent(normalizedSender, k -> {
                                     ConversationView c = new ConversationView(userId, phone, sender, sender, "ONLINE");
                                     c.setOnBack(() -> {
@@ -342,7 +343,7 @@ public class ChatView {
         SessionManager.clearSession();
         SocketManager.reset();
         stage.close();
-        NetworkClient freshNetwork = new NetworkClient("localhost", 5000);
+        NetworkClient freshNetwork = MainApp.createNetworkClient();
         new PhoneView(new AuthService(freshNetwork), freshNetwork).start(new Stage());
     }
 

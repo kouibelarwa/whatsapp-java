@@ -9,7 +9,7 @@ public class SocketManager {
     private DataOutputStream binOut;
     private DataInputStream binIn;
 
-    private int userId;      // Ajouté pour stocker l'ID
+    private int userId;
     private String userPhone;
     private boolean authenticated = false;
 
@@ -20,7 +20,6 @@ public class SocketManager {
         return instance;
     }
 
-    // --- MÉTHODES MANQUANTES À AJOUTER ---
     public void setUserPhone(String phone) {
         this.userPhone = phone;
     }
@@ -28,7 +27,6 @@ public class SocketManager {
     public void setUserId(int userId) {
         this.userId = userId;
     }
-    // -------------------------------------
 
     public void enableBinaryMode() throws IOException {
         this.binOut = new DataOutputStream(socket.getOutputStream());
@@ -57,8 +55,8 @@ public class SocketManager {
                 while (true) {
                     String type     = binIn.readUTF();
                     String sender   = binIn.readUTF();
-                    String ignored  = binIn.readUTF(); // ✅ receiverPhone (ignoré)
-                    String filename = binIn.readUTF(); // ✅ filename correct
+                    String ignored  = binIn.readUTF();
+                    String filename = binIn.readUTF();
                     int size        = binIn.readInt();
                     byte[] data     = new byte[size];
                     binIn.readFully(data);

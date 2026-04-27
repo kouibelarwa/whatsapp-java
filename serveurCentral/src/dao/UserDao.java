@@ -7,146 +7,121 @@ import java.util.List;
 
 public class UserDao {
 
-    // ─────────────────────────────
-    // SAVE OTP CODE (FIXÉ PROPRE)
-    // ─────────────────────────────
+    /**
+     * Finds the exact phone string stored in the database to avoid duplicate accounts 
+     * due to formatting differences (e.g. 06 vs +336).
+     */
+    public String getExactPhoneFromDB(String phone) {
+        User u = searchByPhone(phone);
+        return (u != null) ? u.getPhone() : phone;
+    }
+
     public void saveVerificationCode(String phone, String code) {
-
+        String dbPhone = getExactPhoneFromDB(phone);
         String sql = "UPDATE users SET verification_code = ? WHERE phone = ?";
-
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
-
             ps.setString(1, code);
-            ps.setString(2, phone);
-
+            ps.setString(2, dbPhone);
             int updated = ps.executeUpdate();
-
-            // si user n'existe pas → on le crée
             if (updated == 0) {
-                String insert = "INSERT INTO users(phone, verification_code, verified, status) VALUES(?, ?, false, 'OFFLINE')";
+                // User does not exist, insert them. Use a simple insert.
+                int randomId = new java.util.Random().nextInt(900000) + 100000;
+                String insert = "INSERT INTO users(id, phone, verification_code, verified, status, username) VALUES(?, ?, ?, false, 'OFFLINE', ?)";
                 try (PreparedStatement ps2 = conn.prepareStatement(insert)) {
-                    ps2.setString(1, phone);
-                    ps2.setString(2, code);
+                    ps2.setInt(1, randomId);
+                    ps2.setString(2, phone);
+                    ps2.setString(3, code);
+                    ps2.setString(4, "User_" + randomId);
                     ps2.executeUpdate();
+                } catch (Exception ex) {
+                    System.err.println("[UserDao] Erreur Insertion Nouvel Utilisateur : " + ex.getMessage());
                 }
             }
-
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    // ─────────────────────────────
-    // VERIFY CODE (FIX IMPORTANT)
-    // ─────────────────────────────
     public boolean verifyCode(String phone, String code) {
-
+        String dbPhone = getExactPhoneFromDB(phone);
         String sql = "SELECT verification_code FROM users WHERE phone = ?";
-
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
-
-            ps.setString(1, phone);
+            ps.setString(1, dbPhone);
             ResultSet rs = ps.executeQuery();
-
             if (rs.next()) {
                 String dbCode = rs.getString("verification_code");
                 return dbCode != null && dbCode.trim().equals(code.trim());
             }
-
         } catch (Exception e) {
             e.printStackTrace();
         }
-
         return false;
     }
 
-    // ─────────────────────────────
-    // CLEAR CODE AFTER SUCCESS (IMPORTANT)
-    // ─────────────────────────────
     public void clearVerificationCode(String phone) {
-
+        String dbPhone = getExactPhoneFromDB(phone);
         String sql = "UPDATE users SET verification_code = NULL WHERE phone = ?";
-
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
-
-            ps.setString(1, phone);
+            ps.setString(1, dbPhone);
             ps.executeUpdate();
-
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    // ─────────────────────────────
-    // VERIFY + SET USER
-    // ─────────────────────────────
     public void markVerifiedAndSetUsername(String phone, String username) {
-
+        String dbPhone = getExactPhoneFromDB(phone);
         String sql = "UPDATE users SET verified = TRUE, username = ?, status = 'ONLINE' WHERE phone = ?";
-
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
-
             ps.setString(1, username);
-            ps.setString(2, phone);
-            ps.executeUpdate();
-
+            ps.setString(2, dbPhone);
+            int updated = ps.executeUpdate();
+            
+            // Si l'utilisateur n'existait pas (ex: erreur SQL précédente), on le force ici !
+            if (updated == 0) {
+                int randomId = new java.util.Random().nextInt(900000) + 100000;
+                String insert = "INSERT INTO users(id, phone, verification_code, verified, status, username) VALUES(?, ?, '0000', TRUE, 'ONLINE', ?)";
+                try (PreparedStatement ps2 = conn.prepareStatement(insert)) {
+                    ps2.setInt(1, randomId);
+                    ps2.setString(2, phone);
+                    ps2.setString(3, username);
+                    ps2.executeUpdate();
+                }
+            }
         } catch (Exception e) {
+            System.err.println("[UserDao] Erreur markVerified : " + e.getMessage());
             e.printStackTrace();
         }
     }
 
-    // ─────────────────────────────
     public void updateStatusById(int userId, String status) {
-
         String sql = "UPDATE users SET status = ? WHERE id = ?";
-
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
-
             ps.setString(1, status);
             ps.setInt(2, userId);
             ps.executeUpdate();
-
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    // ─────────────────────────────
     public int getIdByPhone(String phone) {
-
-        String sql = "SELECT id FROM users WHERE phone = ?";
-
-        try (Connection conn = DBConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-
-            ps.setString(1, phone);
-            ResultSet rs = ps.executeQuery();
-
-            if (rs.next()) return rs.getInt("id");
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
+        User u = searchByPhone(phone);
+        if (u != null) return u.getId();
         return -1;
     }
 
-    // ─────────────────────────────
     public User getByPhone(String phone) {
-
         String sql = "SELECT * FROM users WHERE phone = ?";
-
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
-
             ps.setString(1, phone);
             ResultSet rs = ps.executeQuery();
-
             if (rs.next()) {
                 return new User(
                         rs.getInt("id"),
@@ -157,11 +132,9 @@ public class UserDao {
                         rs.getString("status")
                 );
             }
-
         } catch (Exception e) {
             e.printStackTrace();
         }
-
         return null;
     }
 
@@ -171,6 +144,13 @@ public class UserDao {
 
         String targetDigits = normalizeDigits(phone);
         if (targetDigits.isEmpty()) return null;
+
+        String targetSuffix = targetDigits;
+        if (targetDigits.startsWith("00")) {
+            targetSuffix = targetDigits.substring(2);
+        } else if (targetDigits.startsWith("0")) {
+            targetSuffix = targetDigits.substring(1);
+        }
 
         String sql = "SELECT * FROM users";
         try (Connection conn = DBConnection.getConnection();
@@ -191,10 +171,15 @@ public class UserDao {
 
             for (User u : candidates) {
                 String dbDigits = normalizeDigits(u.getPhone());
-                if (dbDigits.equals(targetDigits)
-                        || dbDigits.equals(stripInternationalPrefix(targetDigits))
-                        || stripInternationalPrefix(dbDigits).equals(targetDigits)) {
-                    return u;
+                
+                // Exact digit match
+                if (dbDigits.equals(targetDigits)) return u;
+                
+                // Smart Suffix match (e.g. 0612345678 vs 33612345678)
+                if (dbDigits.length() >= 8 && targetSuffix.length() >= 8) {
+                    if (dbDigits.endsWith(targetSuffix) || targetSuffix.endsWith(dbDigits)) {
+                        return u;
+                    }
                 }
             }
         } catch (Exception e) {
@@ -206,11 +191,5 @@ public class UserDao {
     private String normalizeDigits(String input) {
         if (input == null) return "";
         return input.replaceAll("[^0-9]", "");
-    }
-
-    private String stripInternationalPrefix(String digits) {
-        if (digits == null) return "";
-        if (digits.startsWith("00") && digits.length() > 2) return digits.substring(2);
-        return digits;
     }
 }

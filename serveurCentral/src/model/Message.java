@@ -21,6 +21,7 @@ public class Message {
     private String filename;
     private String content;
     private String etat;
+    private java.sql.Timestamp sentAt;
 
     // ── Factory texte ────────────────────────────────────────────
     public static Message text(int senderId, String senderPhone,
@@ -32,6 +33,7 @@ public class Message {
         m.type       = "text";
         m.content    = content;
         m.etat       = "NOT_DELIVERED";
+        m.sentAt     = new java.sql.Timestamp(System.currentTimeMillis());
         return m;
     }
 
@@ -46,13 +48,14 @@ public class Message {
         m.type       = type;
         m.filename   = filename;
         m.etat       = "NOT_DELIVERED";
+        m.sentAt     = new java.sql.Timestamp(System.currentTimeMillis());
         return m;
     }
 
     // ── Constructeur depuis la base ──────────────────────────────
     public Message(int id, int senderId, String senderPhone,
                    int receiverId, String type,
-                   String filename, String content, String etat) {
+                   String filename, String content, String etat, java.sql.Timestamp sentAt) {
         this.id          = id;
         this.senderId    = senderId;
         this.senderPhone = senderPhone;
@@ -61,6 +64,7 @@ public class Message {
         this.filename    = filename;
         this.content     = content;
         this.etat        = etat;
+        this.sentAt      = sentAt;
     }
 
     private Message() {}
@@ -81,4 +85,5 @@ public class Message {
     public String getContent()      { return content; }
     public String getEtat()         { return etat; }
     public void   setEtat(String e) { this.etat = e; }
+    public java.sql.Timestamp getSentAt() { return sentAt; }
 }

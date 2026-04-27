@@ -46,6 +46,8 @@ public class ConversationView {
     private Label statusLabel;
     private Button btnSend;
     private Button btnAudio;
+    private File pendingAttachment;
+    private String pendingAttachmentType;
 
     private Runnable onBack;
     private Runnable onAudioCall;
@@ -110,7 +112,7 @@ public class ConversationView {
         nameLbl.setStyle("-fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 15px;");
         statusLabel = new Label("● " + ("ONLINE".equals(contactStatus) ? "En ligne" : "Hors ligne"));
         statusLabel.setStyle("-fx-text-fill: " + ("ONLINE".equals(contactStatus) ? "#25D366" : "#787878") + "; -fx-font-size: 11px;");
-        info.getChildren().addAll(nameLbl, statusLabel);
+        info.getChildren().addAll(nameLbl);
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
@@ -146,10 +148,6 @@ public class ConversationView {
         btnEmoji.setStyle("-fx-background-color: transparent; -fx-text-fill: white; -fx-font-size: 20px; -fx-cursor: hand;");
         btnEmoji.setOnAction(e -> showEmojiPicker(btnEmoji));
 
-        Button btnFile = new Button("📎");
-        btnFile.setStyle("-fx-background-color: transparent; -fx-text-fill: white; -fx-font-size: 20px; -fx-cursor: hand;");
-        btnFile.setOnAction(e -> sendFile());
-
         btnAudio = new Button("🎤");
         btnAudio.setStyle("-fx-background-color: transparent; -fx-text-fill: white; -fx-font-size: 20px; -fx-cursor: hand;");
         btnAudio.setOnAction(e -> {
@@ -165,15 +163,20 @@ public class ConversationView {
         textField.setStyle("-fx-background-color: #2a372e; -fx-text-fill: white; -fx-background-radius: 20px;");
         textField.setPrefHeight(40);
         HBox.setHgrow(textField, Priority.ALWAYS);
-        textField.setOnAction(e -> sendText());
+        textField.setOnAction(e -> sendCurrentPayload());
 
         btnSend = new Button("➤");
         btnSend.setStyle("-fx-background-color: #25D366; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 20px;");
         btnSend.setPrefHeight(40);
         btnSend.setPrefWidth(40);
-        btnSend.setOnAction(e -> sendText());
+        btnSend.setOnAction(e -> sendCurrentPayload());
 
-        inputBar.getChildren().addAll(btnEmoji, btnFile, btnAudio, textField, btnSend);
+        Button btnFile = new Button("📎");
+        btnFile.setStyle("-fx-background-color: transparent; -fx-text-fill: white; -fx-font-size: 20px; -fx-cursor: hand;");
+        btnFile.setOnAction(e -> pickAttachment());
+
+        // File picker button is kept to the left of text input, audio to right.
+        inputBar.getChildren().addAll(btnEmoji, btnFile, textField, btnAudio, btnSend);
         view.setBottom(inputBar);
     }
 
@@ -182,16 +185,18 @@ public class ConversationView {
         List<Message> history = messageDao.getConversation(myUserId, contactId);
         for (Message m : history) {
             boolean mine = m.getSenderId() == myUserId;
+            String timeStr = formatTime(m.getSentAt());
+            String etat = m.getEtat();
             if (m.isText()) {
-                addMessageBubble(m.getContent(), mine);
+                addMessageBubble(m.getContent(), mine, timeStr, etat);
             } else if ("audio".equals(m.getType())) {
                 byte[] data = messageDao.getDataById(m.getId());
                 try {
                     File tempFile = File.createTempFile("history_audio_", ".wav");
                     Files.write(tempFile.toPath(), data);
-                    addAudioBubble(tempFile, mine);
+                    addAudioBubble(tempFile, mine, timeStr, etat);
                 } catch (Exception e) {
-                    addMessageBubble("🎵 Message audio", mine);
+                    addMessageBubble("🎵 Message audio", mine, timeStr, etat);
                 }
             } else {
                 String filename = m.getFilename() != null ? m.getFilename() : "fichier";
@@ -199,25 +204,53 @@ public class ConversationView {
                     byte[] binaryData = messageDao.getDataById(m.getId());
                     File tempFile = File.createTempFile("history_file_", "_" + filename.replaceAll("[^a-zA-Z0-9._-]", "_"));
                     Files.write(tempFile.toPath(), binaryData);
-                    addFileBubble(tempFile, filename, m.getType(), mine);
+                    addFileBubble(tempFile, filename, m.getType(), mine, timeStr, etat);
                 } catch (Exception e) {
-                    addMessageBubble("📎 " + filename, mine);
+                    addMessageBubble("📎 " + filename, mine, timeStr, etat);
                 }
             }
         }
         scrollToBottom();
     }
 
-    private void sendText() {
+    private void sendCurrentPayload() {
+        boolean sentSomething = false;
         String text = textField.getText().trim();
-        if (text.isEmpty()) return;
-        textField.setText("");
-        addMessageBubble(text, true);
-        scrollToBottom();
+        if (!text.isEmpty()) {
+            textField.setText("");
+            addMessageBubble(text, true, formatTime(null), "NOT_DELIVERED");
+            scrollToBottom();
+            sentSomething = true;
+            new Thread(() -> SocketManager.getInstance().sendBinary(
+                    "text", contactPhone, "", text.getBytes(StandardCharsets.UTF_8))
+            ).start();
+        }
 
-        new Thread(() -> SocketManager.getInstance().sendBinary(
-                "text", contactPhone, "", text.getBytes(StandardCharsets.UTF_8))
-        ).start();
+        if (pendingAttachment != null && pendingAttachment.exists()) {
+            File fileToSend = pendingAttachment;
+            String typeToSend = pendingAttachmentType != null ? pendingAttachmentType : "file";
+            pendingAttachment = null;
+            pendingAttachmentType = null;
+            textField.setPromptText("Écrire un message...");
+
+            try {
+                byte[] data = Files.readAllBytes(fileToSend.toPath());
+                String filename = fileToSend.getName();
+                addFileBubble(fileToSend, filename, typeToSend, true, formatTime(null), "NOT_DELIVERED");
+                scrollToBottom();
+                sentSomething = true;
+                new Thread(() -> SocketManager.getInstance().sendBinary(
+                        typeToSend, contactPhone, filename, data)
+                ).start();
+            } catch (Exception e) {
+                Alert alert = new Alert(Alert.AlertType.ERROR, "Erreur lors de l'envoi du fichier : " + e.getMessage());
+                alert.showAndWait();
+            }
+        }
+
+        if (!sentSomething) {
+            textField.setPromptText("Écrire un message...");
+        }
     }
 
     private void showEmojiPicker(Button btn) {
@@ -251,27 +284,15 @@ public class ConversationView {
         }
     }
 
-    private void sendFile() {
+    private void pickAttachment() {
         FileChooser fileChooser = new FileChooser();
         fileChooser.setTitle("Sélectionner un fichier");
         File file = fileChooser.showOpenDialog(view.getScene().getWindow());
         
         if (file != null) {
-            try {
-                byte[] data = Files.readAllBytes(file.toPath());
-                String filename = file.getName();
-                String type = isVideoFile(filename) ? "video" : "file";
-                addFileBubble(file, filename, type, true);
-                scrollToBottom();
-                
-                new Thread(() -> SocketManager.getInstance().sendBinary(
-                        type, contactPhone, filename, data)
-                ).start();
-                
-            } catch (Exception e) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Erreur lors de la lecture du fichier : " + e.getMessage());
-                alert.showAndWait();
-            }
+            pendingAttachment = file;
+            pendingAttachmentType = isVideoFile(file.getName()) ? "video" : "file";
+            textField.setPromptText("Fichier sélectionné: " + file.getName() + " (cliquez sur ➤ pour envoyer)");
         }
     }
 
@@ -332,7 +353,7 @@ public class ConversationView {
                 String filename = "vocal_" + System.currentTimeMillis() + ".wav";
                 
                 Platform.runLater(() -> {
-                    addAudioBubble(tempAudioFile, true);
+                    addAudioBubble(tempAudioFile, true, formatTime(null), "NOT_DELIVERED");
                     scrollToBottom();
                 });
                 
@@ -347,13 +368,14 @@ public class ConversationView {
 
     public void receiveMessage(String type, String filename, byte[] data) {
         Platform.runLater(() -> {
+            String timeStr = formatTime(null);
             if ("text".equals(type)) {
-                addMessageBubble(new String(data, StandardCharsets.UTF_8), false);
+                addMessageBubble(new String(data, StandardCharsets.UTF_8), false, timeStr, "READ");
             } else if ("audio".equals(type)) {
                 try {
                     File tempFile = File.createTempFile("received_audio_", ".wav");
                     Files.write(tempFile.toPath(), data);
-                    addAudioBubble(tempFile, false);
+                    addAudioBubble(tempFile, false, timeStr, "READ");
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -362,14 +384,14 @@ public class ConversationView {
                     String safeName = (filename == null || filename.isBlank()) ? ("incoming_" + System.currentTimeMillis()) : filename;
                     File tempFile = File.createTempFile("received_", "_" + safeName.replaceAll("[^a-zA-Z0-9._-]", "_"));
                     Files.write(tempFile.toPath(), data);
-                    addFileBubble(tempFile, safeName, type, false);
+                    addFileBubble(tempFile, safeName, type, false, timeStr, "READ");
                 } catch (Exception e) {
                     String label = "video".equals(type) ? "🎬 Vidéo reçue" : "📎 Fichier reçu";
-                    addMessageBubble(label + " (" + (data.length/1024) + " KB)", false);
+                    addMessageBubble(label + " (" + (data.length/1024) + " KB)", false, timeStr, "READ");
                 }
             } else {
 
-                addMessageBubble("📎 Message reçu (" + type + ")", false);
+                addMessageBubble("📎 Message reçu (" + type + ")", false, timeStr, "READ");
             }
             scrollToBottom();
             if (contactId != -1) messageDao.markAllAsRead(contactId, myUserId);
@@ -387,7 +409,24 @@ public class ConversationView {
                 || lower.endsWith(".webm");
     }
 
-    private void addAudioBubble(File audioFile, boolean mine) {
+    private String formatTime(java.sql.Timestamp ts) {
+        if (ts == null) return new java.text.SimpleDateFormat("HH:mm").format(new java.util.Date());
+        return new java.text.SimpleDateFormat("HH:mm").format(ts);
+    }
+
+    private Label createTimeLabel(String timeStr, String etat, boolean mine) {
+        String text = timeStr;
+        if (mine && etat != null) {
+            text += "READ".equals(etat) ? " ✓✓" : ("DELIVERED".equals(etat) ? " ✓✓" : " ✓");
+        }
+        Label timeLabel = new Label(text);
+        String color = (mine && "READ".equals(etat)) ? "#53bdeb" : "#969696";
+        timeLabel.setStyle("-fx-text-fill: " + color + "; -fx-font-size: 10px;");
+        timeLabel.setAlignment(Pos.CENTER_RIGHT);
+        return timeLabel;
+    }
+
+    private void addAudioBubble(File audioFile, boolean mine, String timeStr, String etat) {
         HBox wrapper = new HBox();
         wrapper.setAlignment(mine ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
 
@@ -418,16 +457,14 @@ public class ConversationView {
 
         audioPlayer.getChildren().addAll(btnPlay, lblDuration);
 
-        Label timeLabel = new Label("Maintenant");
-        timeLabel.setStyle("-fx-text-fill: #969696; -fx-font-size: 10px;");
-        timeLabel.setAlignment(Pos.CENTER_RIGHT);
+        Label timeLabel = createTimeLabel(timeStr, etat, mine);
 
         bubble.getChildren().addAll(audioPlayer, timeLabel);
         wrapper.getChildren().add(bubble);
         messagesPanel.getChildren().add(wrapper);
     }
 
-    private void addFileBubble(File localFile, String filename, String type, boolean mine) {
+    private void addFileBubble(File localFile, String filename, String type, boolean mine, String timeStr, String etat) {
         HBox wrapper = new HBox();
         wrapper.setAlignment(mine ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
 
@@ -464,7 +501,9 @@ public class ConversationView {
         downloadBtn.setOnAction(e -> downloadFile(localFile, filename));
         actions.getChildren().addAll(openBtn, downloadBtn);
 
-        bubble.getChildren().addAll(fileLabel, sizeLabel, actions);
+        Label timeLabel = createTimeLabel(timeStr, etat, mine);
+
+        bubble.getChildren().addAll(fileLabel, sizeLabel, actions, timeLabel);
         wrapper.getChildren().add(bubble);
         messagesPanel.getChildren().add(wrapper);
     }
@@ -509,7 +548,7 @@ public class ConversationView {
         stage.setOnCloseRequest(e -> player.dispose());
     }
 
-    private void addMessageBubble(String text, boolean mine) {
+    private void addMessageBubble(String text, boolean mine, String timeStr, String etat) {
         HBox wrapper = new HBox();
         wrapper.setAlignment(mine ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
 
@@ -524,9 +563,7 @@ public class ConversationView {
         msgText.setFont(Font.font("Segoe UI Emoji", 14));
         textFlow.getChildren().add(msgText);
 
-        Label timeLabel = new Label("Maintenant");
-        timeLabel.setStyle("-fx-text-fill: #969696; -fx-font-size: 10px;");
-        timeLabel.setAlignment(Pos.CENTER_RIGHT);
+        Label timeLabel = createTimeLabel(timeStr, etat, mine);
 
         bubble.getChildren().addAll(textFlow, timeLabel);
         wrapper.getChildren().add(bubble);

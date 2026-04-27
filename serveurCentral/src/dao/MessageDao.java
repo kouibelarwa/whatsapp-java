@@ -58,7 +58,7 @@ public class MessageDao {
         if (userId1 == -1 || userId2 == -1) return list;
 
         String sql = "SELECT m.id, m.sender_id, m.receiver_id, "
-                + "m.type, m.filename, m.content, m.etat, "
+                + "m.type, m.filename, m.content, m.etat, m.sent_at, "
                 + "u.phone AS sender_phone "
                 + "FROM messages m "
                 + "JOIN users u ON u.id = m.sender_id "
@@ -84,7 +84,8 @@ public class MessageDao {
                         rs.getString("type"),
                         rs.getString("filename"),
                         rs.getString("content"),
-                        rs.getString("etat")
+                        rs.getString("etat"),
+                        rs.getTimestamp("sent_at")
                 ));
             }
         } catch (Exception e) { e.printStackTrace(); }
@@ -97,7 +98,7 @@ public class MessageDao {
     public List<Message> getUndelivered(int receiverId) {
         List<Message> list = new ArrayList<>();
         String sql = "SELECT m.id, m.sender_id, m.receiver_id, "
-                + "m.type, m.filename, m.content, m.etat, "
+                + "m.type, m.filename, m.content, m.etat, m.sent_at, "
                 + "u.phone AS sender_phone "
                 + "FROM messages m "
                 + "JOIN users u ON u.id = m.sender_id "
@@ -117,7 +118,8 @@ public class MessageDao {
                         rs.getString("type"),
                         rs.getString("filename"),
                         rs.getString("content"),
-                        rs.getString("etat")
+                        rs.getString("etat"),
+                        rs.getTimestamp("sent_at")
                 ));
             }
         } catch (Exception e) { e.printStackTrace(); }

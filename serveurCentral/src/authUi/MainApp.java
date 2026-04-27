@@ -8,18 +8,19 @@ import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.stage.Stage;
 
-public class MainApp extends Application {
-
-    private NetworkClient network;
-    private AuthService auth;
+public class MainApp {
 
     public static void main(String[] args) {
-        launch(args);
+        Application.launch(ChatApplication.class, args);
     }
+
+    public static class ChatApplication extends Application {
+        private NetworkClient network;
+        private AuthService auth;
 
     @Override
     public void start(Stage primaryStage) {
-        network = new NetworkClient("localhost", 5000);
+        network = createNetworkClient();
         auth = new AuthService(network);
 
         if (SessionManager.hasSession()) {
@@ -44,5 +45,35 @@ public class MainApp extends Application {
         } else {
             new PhoneView(auth, network).start(new Stage());
         }
+    }
+    } // Close ChatApplication
+
+    public static NetworkClient createNetworkClient() {
+        return new NetworkClient(resolveServerHost(), resolveServerPort());
+    }
+
+    public static String resolveServerHost() {
+        String fromProperty = System.getProperty("chat.server.host");
+        if (fromProperty != null && !fromProperty.isBlank()) {
+            return fromProperty.trim();
+        }
+        String fromEnv = System.getenv("CHAT_SERVER_HOST");
+        if (fromEnv != null && !fromEnv.isBlank()) {
+            return fromEnv.trim();
+        }
+        return "localhost";
+    }
+
+    public static int resolveServerPort() {
+        String fromProperty = System.getProperty("chat.server.port");
+        String fromEnv = System.getenv("CHAT_SERVER_PORT");
+        String raw = (fromProperty != null && !fromProperty.isBlank()) ? fromProperty : fromEnv;
+        if (raw != null && !raw.isBlank()) {
+            try {
+                return Integer.parseInt(raw.trim());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return 5000;
     }
 }

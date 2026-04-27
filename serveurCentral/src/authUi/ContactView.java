@@ -111,6 +111,14 @@ public class ContactView {
         });
     }
 
+    public void addDynamicContact(String phone, String name, String status) {
+        Platform.runLater(() -> {
+            if (!contactRows.containsKey(phone)) {
+                addContactUI(phone, name, status);
+            }
+        });
+    }
+
     public void filterContacts(String query) {
         String normalized = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         for (Map.Entry<String, HBox> entry : contactRows.entrySet()) {

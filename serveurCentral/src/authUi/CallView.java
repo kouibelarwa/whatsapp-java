@@ -12,6 +12,7 @@ import javafx.scene.control.Label;
 import javafx.scene.image.ImageView;
 import javafx.scene.image.WritableImage;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
@@ -34,7 +35,8 @@ public class CallView {
     private final Runnable onHangup;
 
     private Stage stage;
-    private ImageView videoFrame;
+    private ImageView remoteVideoView;
+    private ImageView localVideoView;
     private Label statusLbl;
     private HBox btnBox;
 
@@ -76,10 +78,24 @@ public class CallView {
         statusLbl = new Label(isIncoming ? "Appel entrant..." : "Appel en cours...");
         statusLbl.setStyle("-fx-text-fill: #25D366; -fx-font-size: 14px;");
 
-        videoFrame = new ImageView();
-        videoFrame.setFitWidth(320);
-        videoFrame.setFitHeight(240);
-        videoFrame.setPreserveRatio(true);
+        // Remote Video (Main)
+        remoteVideoView = new ImageView();
+        remoteVideoView.setFitWidth(400);
+        remoteVideoView.setFitHeight(300);
+        remoteVideoView.setPreserveRatio(true);
+        remoteVideoView.setStyle("-fx-background-color: black;");
+
+        // Local Video (Small Preview)
+        localVideoView = new ImageView();
+        localVideoView.setFitWidth(100);
+        localVideoView.setFitHeight(75);
+        localVideoView.setPreserveRatio(true);
+        localVideoView.setStyle("-fx-border-color: #25D366; -fx-border-width: 1px;");
+
+        StackPane videoContainer = new StackPane();
+        videoContainer.setAlignment(Pos.BOTTOM_RIGHT);
+        videoContainer.getChildren().addAll(remoteVideoView, localVideoView);
+        StackPane.setMargin(localVideoView, new Insets(10));
 
         btnBox = new HBox(20);
         btnBox.setAlignment(Pos.CENTER);
@@ -103,12 +119,12 @@ public class CallView {
         }
 
         if ("video".equals(callType)) {
-            root.getChildren().addAll(typeLbl, nameLbl, statusLbl, videoFrame, btnBox);
+            root.getChildren().addAll(typeLbl, nameLbl, statusLbl, videoContainer, btnBox);
         } else {
             root.getChildren().addAll(typeLbl, nameLbl, statusLbl, btnBox);
         }
 
-        Scene scene = new Scene(root, 400, "video".equals(callType) ? 500 : 300);
+        Scene scene = new Scene(root, 440, "video".equals(callType) ? 550 : 300);
         scene.setFill(Color.TRANSPARENT);
         stage.setScene(scene);
         stage.show();
@@ -186,7 +202,7 @@ public class CallView {
                         BufferedImage image = webcam.getImage();
                         if (image != null) {
                             WritableImage fxImage = SwingFXUtils.toFXImage(image, null);
-                            Platform.runLater(() -> videoFrame.setImage(fxImage));
+                            Platform.runLater(() -> localVideoView.setImage(fxImage));
 
                             if (isCallActive) {
                                 try {
@@ -216,7 +232,7 @@ public class CallView {
                 BufferedImage image = ImageIO.read(new ByteArrayInputStream(data));
                 if (image != null) {
                     WritableImage fxImage = SwingFXUtils.toFXImage(image, null);
-                    Platform.runLater(() -> videoFrame.setImage(fxImage));
+                    Platform.runLater(() -> remoteVideoView.setImage(fxImage));
                 }
             } catch (Exception e) { e.printStackTrace(); }
         }

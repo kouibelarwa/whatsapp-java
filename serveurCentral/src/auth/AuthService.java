@@ -18,7 +18,6 @@ public class AuthService {
 
     public NetworkClient getNetwork() { return network; }
 
-    // ─── STEP 1 : demander le code SMS ───────────────────────────
     public void requestCode(String phone, Runnable ok, Runnable err) {
         new Thread(() -> {
             try {
@@ -33,8 +32,6 @@ public class AuthService {
         }).start();
     }
 
-    // ─── STEP 2 : vérifier le code ───────────────────────────────
-    // Dans AuthService.java
     public void verifyCode(String phone, String code,
                            String username, AuthCallback cb) {
         new Thread(() -> {
@@ -44,14 +41,12 @@ public class AuthService {
                 if (res == null) { cb.onError("NO_RESPONSE"); return; }
 
                 if (res.startsWith("AUTH_OK:")) {
-                    String[] p    = res.split(":", 4);
-                    int    uid    = Integer.parseInt(p[1]);
+                    String[] p = res.split(":", 4);
+                    int uid = Integer.parseInt(p[1]);
                     String rPhone = p[2];
-                    String rUser  = p.length > 3 ? p[3] : username;
+                    String rUser = p.length > 3 ? p[3] : username;
 
                     SessionManager.saveSession(uid, rPhone, rUser);
-
-                    // ✅ FIX PRINCIPAL : injecter le socket AVANT enableBinaryMode
                     SocketManager.getInstance().initAuth(
                             network.getSocket(), uid, rPhone);
                     SocketManager.getInstance().enableBinaryMode();
@@ -66,7 +61,6 @@ public class AuthService {
         }).start();
     }
 
-    // ─── RECONNECT ────────────────────────────────────────────────
     public void reconnect(String phone, AuthCallback cb) {
         new Thread(() -> {
             try {
@@ -75,9 +69,8 @@ public class AuthService {
                 if (res == null) { cb.onError("NO_RESPONSE"); return; }
 
                 if (res.startsWith("SESSION_OK:")) {
-                    // SESSION_OK:userId:username
-                    String[] p   = res.split(":", 3);
-                    int    uid   = Integer.parseInt(p[1]);
+                    String[] p = res.split(":", 3);
+                    int uid = Integer.parseInt(p[1]);
                     String uname = p.length > 2 ? p[2] : "";
 
                     SessionManager.saveSession(uid, phone, uname);

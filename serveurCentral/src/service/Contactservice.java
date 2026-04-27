@@ -19,7 +19,6 @@ public class Contactservice {
             String nickname = parts.length > 1 ? parts[1].trim() : null;
             String currentUserPhone = normalizePhone(userPhone);
 
-            // ✅ Empêcher de s'ajouter soi-même
             if (targetPhone.equals(currentUserPhone)) {
                 sendResponse(handler, "ADD_FAIL:SELF");
                 return;
@@ -31,12 +30,8 @@ public class Contactservice {
 
             User target = userDao.searchByPhone(targetPhone);
 
-            System.out.println("[Contactservice] ADD demandé : " + targetPhone
-                    + " → trouvé : " + (target != null ? target.getId() : "NULL")); // DEBUG
-
             if (target != null) {
                 boolean added = contactDao.addContact(userId, target.getId(), nickname);
-                System.out.println("[Contactservice] addContact résultat : " + added); // DEBUG
                 if (!added) {
                     sendResponse(handler, "ADD_FAIL:DB");
                     return;
@@ -56,7 +51,7 @@ public class Contactservice {
             if (target != null) {
                 contactDao.removeContact(userId, target.getId());
             }
-            handleGet(userId, handler); // ✅ Renvoyer la liste après suppression
+            handleGet(userId, handler);
         }
     }
 
@@ -78,7 +73,6 @@ public class Contactservice {
 
     private void sendResponse(ClientHandler handler, String msg) {
         try {
-            // ✅ Format binaire pour que le client reçoive correctement
             handler.send("CONTACT_SIGNAL", "SERVER", "", msg.getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
             e.printStackTrace();
