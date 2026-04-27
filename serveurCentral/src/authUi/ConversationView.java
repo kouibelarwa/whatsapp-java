@@ -70,7 +70,7 @@ public class ConversationView extends JPanel {
 
         if (contactId != -1) messageDao.markAllAsRead(contactId, myUserId);
     }
-
+    private CallView activeCallView = null;
     // ── HEADER ──────────────────────────────────────────────────
     private void buildHeader() {
         JPanel header = new JPanel(new BorderLayout());
@@ -703,16 +703,40 @@ public class ConversationView extends JPanel {
 
     // ── APPEL ────────────────────────────────────────────────────
     private void startCall(String callType) {
+
+        // Si appel déjà en cours, ignorer
+        if (activeCallView != null && activeCallView.isVisible()) {
+            JOptionPane.showMessageDialog(this,
+                    "Un appel est déjà en cours !",
+                    "Appel en cours", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        // Nettoyer l'ancien proprement
+        if (activeCallView != null) {
+            activeCallView.forceStop();
+            activeCallView = null;
+        }
+
+        // Envoyer signal au serveur
         SocketManager.getInstance().sendBinary(
                 "CALL_SIGNAL", contactPhone, "",
-                ("CALL_REQUEST:" + contactPhone).getBytes(StandardCharsets.UTF_8));
+                ("CALL_REQUEST:" + contactPhone)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
         Frame parent = (Frame) SwingUtilities.getWindowAncestor(this);
-        CallView callView = new CallView(
+
+        activeCallView = new CallView(
                 parent, contactName, contactPhone, callType, false,
-                () -> SocketManager.getInstance().sendBinary(
-                        "CALL_SIGNAL", contactPhone, "",
-                        ("CALL_END:" + contactPhone).getBytes(StandardCharsets.UTF_8)));
-        callView.setVisible(true);
+                () -> {
+                    SocketManager.getInstance().sendBinary(
+                            "CALL_SIGNAL", contactPhone, "",
+                            ("CALL_END:" + contactPhone)
+                                    .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    activeCallView = null;
+                });
+
+        SwingUtilities.invokeLater(() -> activeCallView.setVisible(true));
     }
 
     // ── UTILITAIRES ──────────────────────────────────────────────

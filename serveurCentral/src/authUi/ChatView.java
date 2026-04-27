@@ -309,64 +309,88 @@ public class ChatView {
     // GESTION SIGNAUX D'APPEL
     // ─────────────────────────────────────────────────────────────
 
+    // ── REMPLACE UNIQUEMENT la méthode handleCallSignal() dans ChatView.java ──
+// Le reste de ChatView.java reste IDENTIQUE
+
+    private CallView activeCallView = null; // ✅ AJOUTER en champ de classe
+
     private void handleCallSignal(String payload, String sender) {
 
         // ── Appel entrant ──────────────────────────────────────────
-        if (payload.startsWith("CALL_INCOMING:") || payload.startsWith("CALL_REQUEST:")) {
-            String caller = sender != null ? sender
-                    : (payload.contains(":") ? payload.split(":", 2)[1] : "Inconnu");
+        if (payload.startsWith("CALL_INCOMING:")) {
+            // Format : CALL_INCOMING:callerPhone:callId
+            String[] parts = payload.split(":", 3);
+            String caller  = parts.length >= 2 ? parts[1] : (sender != null ? sender : "Inconnu");
+            String callIdStr = parts.length >= 3 ? parts[2] : "-1";
+            int callId = -1;
+            try { callId = Integer.parseInt(callIdStr); } catch (Exception ignored) {}
 
-            // Déduire le type (audio par défaut, vidéo si précisé)
-            String callType = payload.contains("VIDEO") ? "video" : "audio";
+            final int finalCallId = callId;
+            final String finalCaller = caller;
 
-            // Ouvrir CallView en mode "appel entrant"
-            CallView callView = new CallView(
-                    frame, caller, caller, callType, true,
-                    // Raccrocher → signaler rejet au serveur
+            // ✅ FIX : on n'envoie PAS CALL_ACCEPT automatiquement !
+            // On ouvre CallView et on attend que l'utilisateur clique "Accepter"
+            activeCallView = new CallView(
+                    frame, finalCaller, finalCaller, "audio", true,
+                    // Raccrocher → envoyer CALL_REJECT
                     () -> SocketManager.getInstance().sendBinary(
-                            "CALL_SIGNAL", caller, "",
-                            ("CALL_REJECT:" + caller).getBytes(StandardCharsets.UTF_8))
+                            "CALL_SIGNAL", finalCaller, "",
+                            ("CALL_REJECT:" + finalCaller + ":" + finalCallId)
+                                    .getBytes(StandardCharsets.UTF_8))
             );
 
-            // Quand l'utilisateur accepte, envoyer CALL_ACCEPT
-            // (La CallView affiche deux boutons : Accepter / Refuser)
-            // Pour simplifier, on envoie CALL_ACCEPT à la construction si l'user accepte
-            // La logique réelle dépend de votre protocole de signalisation
+            // ✅ Quand l'utilisateur clique "Accepter" dans CallView,
+            //    CallView appelle onCallAccepted() → on envoie CALL_ACCEPT au serveur
+            // Pour brancher ça, on utilise le callback acceptCallback
+            activeCallView.setAcceptCallback(() ->
+                    SocketManager.getInstance().sendBinary(
+                            "CALL_SIGNAL", finalCaller, "",
+                            ("CALL_ACCEPT:" + finalCaller + ":" + finalCallId)
+                                    .getBytes(StandardCharsets.UTF_8))
+            );
 
-            SocketManager.getInstance().sendBinary(
-                    "CALL_SIGNAL", caller, "",
-                    ("CALL_ACCEPT:" + caller).getBytes(StandardCharsets.UTF_8));
-
-            callView.setVisible(true);
+            activeCallView.setVisible(true);
             return;
         }
 
         // ── Appel accepté ──────────────────────────────────────────
         if (payload.startsWith("CALL_ACCEPTED:")) {
-            // La CallView gère déjà le timer → rien de spécial
-            // On peut notifier via un son ou message discret
+            if (activeCallView != null) {
+                activeCallView.onCallAccepted();
+            }
             showToast("✅ Appel accepté !");
             return;
         }
 
         // ── Appel refusé ───────────────────────────────────────────
         if (payload.startsWith("CALL_REJECTED:")) {
+            if (activeCallView != null) {
+                activeCallView.onCallRejected();
+                activeCallView = null;
+            }
             showToast("❌ Appel refusé.");
             return;
         }
 
         // ── Appel terminé ──────────────────────────────────────────
         if (payload.startsWith("CALL_ENDED:")) {
+            if (activeCallView != null) {
+                activeCallView.onCallEnded();
+                activeCallView = null;
+            }
             showToast("📵 Appel terminé.");
             return;
         }
 
         // ── Appel manqué ───────────────────────────────────────────
         if (payload.startsWith("CALL_MISSED:")) {
+            if (activeCallView != null) {
+                activeCallView.onCallRejected();
+                activeCallView = null;
+            }
             showToast("📵 Appel manqué.");
         }
     }
-
     // ─────────────────────────────────────────────────────────────
     // NOTIFICATIONS
     // ─────────────────────────────────────────────────────────────

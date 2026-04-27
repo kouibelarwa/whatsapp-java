@@ -6,14 +6,6 @@ import java.awt.*;
 import java.awt.event.*;
 import java.awt.image.BufferedImage;
 
-/**
- * CallView — ✅ CORRIGÉ COMPLET :
- * - Timer NE démarre PAS avant que l'autre personne accepte
- * - Caméra s'active correctement pour appel vidéo
- * - Boutons bien visibles (style WhatsApp)
- * - Appel entrant : Accepter / Refuser bien stylisés
- * - Caméra ne s'active que si appel vidéo
- */
 public class CallView extends JDialog {
 
     private static final Color BG_CALL    = new Color(15, 20, 30);
@@ -28,13 +20,14 @@ public class CallView extends JDialog {
     private final boolean  isIncoming;
     private final Runnable onHangUp;
 
-    private javax.swing.Timer uiTimer;
-    private int      seconds   = 0;
-    // ✅ FIX : connected = false, timer ne démarre QUE quand l'autre accepte
-    private boolean  connected = false;
+    private Runnable acceptCallback;
 
-    private JLabel     statusLabel;
-    private JLabel     timerLabel;
+    private javax.swing.Timer uiTimer;
+    private int     seconds   = 0;
+    private boolean connected = false;
+
+    private JLabel      statusLabel;
+    private JLabel      timerLabel;
     private WebcamPanel webcamPanel;
 
     public CallView(Frame parent, String contactName, String contactPhone,
@@ -50,23 +43,29 @@ public class CallView extends JDialog {
                 ? "Appel vidéo — " + this.contactName
                 : "Appel audio — " + this.contactName);
         setUndecorated(true);
-        setSize("video".equals(callType) ? new Dimension(480, 580)
-                : new Dimension(340, 440));
-        setLocationRelativeTo(parent);
-        setDefaultCloseOperation(DISPOSE_ON_CLOSE);
 
+        // ✅ Plein écran
+        GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
+        Rectangle screen = ge.getMaximumWindowBounds();
+        setSize(screen.width, screen.height);
+        setLocation(screen.x, screen.y);
+
+        setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
         buildUI();
-        startTimer();   // timer tourne mais N'incrémente PAS avant connected=true
+        startTimer();
+    }
+
+    public void setAcceptCallback(Runnable callback) {
+        this.acceptCallback = callback;
     }
 
     // ────────────────────────────────────────────────────────────
-    // CONSTRUCTION UI
+    // UI
     // ────────────────────────────────────────────────────────────
     private void buildUI() {
         JPanel root = new JPanel(new BorderLayout());
         root.setBackground(BG_CALL);
-        root.setBorder(BorderFactory.createLineBorder(new Color(50, 60, 80), 1));
-        root.add(buildTitleBar(), BorderLayout.NORTH);
+        root.add(buildTopBar(),   BorderLayout.NORTH);
 
         if ("video".equals(callType)) root.add(buildVideoArea(), BorderLayout.CENTER);
         else                          root.add(buildAudioArea(), BorderLayout.CENTER);
@@ -74,84 +73,28 @@ public class CallView extends JDialog {
         root.add(buildControls(), BorderLayout.SOUTH);
         setContentPane(root);
     }
-    private JPanel buildTitleBar() {
+
+    // ── BARRE HAUT : type + nom + statut + timer + X ──
+    private JPanel buildTopBar() {
         JPanel bar = new JPanel(new BorderLayout());
-        bar.setBackground(new Color(20, 26, 38));
-        bar.setBorder(new EmptyBorder(10, 14, 10, 14));
-        bar.setPreferredSize(new Dimension(0, 42));
+        bar.setBackground(new Color(10, 14, 24));
+        bar.setBorder(new EmptyBorder(14, 20, 14, 20));
 
-        // ✅ Boutons Audio / Video cliquables
-        JPanel typeBtns = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-        typeBtns.setOpaque(false);
+        // Gauche : type d'appel
+        JLabel typeLabel = new JLabel("video".equals(callType) ? "📹 Appel vidéo" : "📞 Appel audio");
+        typeLabel.setForeground(new Color(160, 170, 190));
+        typeLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
 
-        JButton btnAudio = new JButton("Tel");
-        btnAudio.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        btnAudio.setForeground(Color.WHITE);
-        btnAudio.setBackground("audio".equals(callType)
-                ? GREEN : new Color(55, 65, 85));
-        btnAudio.setBorderPainted(false);
-        btnAudio.setFocusPainted(false);
-        btnAudio.setOpaque(true);
-        btnAudio.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        btnAudio.setPreferredSize(new Dimension(60, 26));
-
-        JButton btnVideo = new JButton("Video");
-        btnVideo.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        btnVideo.setForeground(Color.WHITE);
-        btnVideo.setBackground("video".equals(callType)
-                ? GREEN : new Color(55, 65, 85));
-        btnVideo.setBorderPainted(false);
-        btnVideo.setFocusPainted(false);
-        btnVideo.setOpaque(true);
-        btnVideo.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        btnVideo.setPreferredSize(new Dimension(60, 26));
-
-        typeBtns.add(btnAudio);
-        typeBtns.add(btnVideo);
-
-        JButton closeBtn = new JButton("X");
-        closeBtn.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        closeBtn.setForeground(Color.GRAY);
-        closeBtn.setBorderPainted(false);
-        closeBtn.setContentAreaFilled(false);
-        closeBtn.setFocusPainted(false);
-        closeBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        closeBtn.addActionListener(e -> hangUp());
-
-        // Draggable
-        MouseAdapter drag = new MouseAdapter() {
-            Point origin;
-            @Override public void mousePressed(MouseEvent e)  { origin = e.getPoint(); }
-            @Override public void mouseDragged(MouseEvent e)  {
-                if (origin == null) return;
-                Point loc = getLocation();
-                setLocation(loc.x + e.getX() - origin.x,
-                        loc.y + e.getY() - origin.y);
-            }
-        };
-        bar.addMouseListener(drag);
-        bar.addMouseMotionListener(drag);
-
-        bar.add(typeBtns, BorderLayout.WEST);
-        bar.add(closeBtn, BorderLayout.EAST);
-        return bar;
-    }
-
-    private JPanel buildAudioArea() {
-        JPanel panel = new JPanel();
-        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setBackground(BG_CALL);
-        panel.setBorder(new EmptyBorder(30, 20, 20, 20));
-
-        JPanel avatarPanel = buildBigAvatar(contactName, 90);
-        avatarPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        // Centre : nom + statut + timer
+        JPanel centerPanel = new JPanel();
+        centerPanel.setLayout(new BoxLayout(centerPanel, BoxLayout.Y_AXIS));
+        centerPanel.setOpaque(false);
 
         JLabel nameLabel = new JLabel(contactName);
         nameLabel.setForeground(Color.WHITE);
-        nameLabel.setFont(new Font("Segoe UI", Font.BOLD, 20));
+        nameLabel.setFont(new Font("Segoe UI", Font.BOLD, 22));
         nameLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        // ✅ Texte différent : entrant vs sortant
         statusLabel = new JLabel(isIncoming ? "📲  Appel entrant…" : "📡  En attente de réponse…");
         statusLabel.setForeground(new Color(160, 170, 190));
         statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
@@ -159,113 +102,103 @@ public class CallView extends JDialog {
 
         timerLabel = new JLabel("0:00");
         timerLabel.setForeground(GREEN);
-        timerLabel.setFont(new Font("Segoe UI Mono", Font.BOLD, 22));
+        timerLabel.setFont(new Font("Segoe UI Mono", Font.BOLD, 18));
         timerLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        timerLabel.setVisible(false); // ✅ caché jusqu'à connexion
+        timerLabel.setVisible(false);
 
-        panel.add(Box.createVerticalStrut(10));
-        panel.add(avatarPanel);
-        panel.add(Box.createVerticalStrut(20));
-        panel.add(nameLabel);
-        panel.add(Box.createVerticalStrut(8));
-        panel.add(statusLabel);
-        panel.add(Box.createVerticalStrut(8));
-        panel.add(timerLabel);
+        centerPanel.add(nameLabel);
+        centerPanel.add(Box.createVerticalStrut(3));
+        centerPanel.add(statusLabel);
+        centerPanel.add(Box.createVerticalStrut(2));
+        centerPanel.add(timerLabel);
+
+        // Droite : bouton fermer
+        JButton closeBtn = new JButton("✕");
+        closeBtn.setFont(new Font("Segoe UI", Font.PLAIN, 16));
+        closeBtn.setForeground(new Color(180, 180, 180));
+        closeBtn.setBorderPainted(false);
+        closeBtn.setContentAreaFilled(false);
+        closeBtn.setFocusPainted(false);
+        closeBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        closeBtn.addActionListener(e -> hangUp());
+
+        bar.add(typeLabel,   BorderLayout.WEST);
+        bar.add(centerPanel, BorderLayout.CENTER);
+        bar.add(closeBtn,    BorderLayout.EAST);
+        return bar;
+    }
+
+    // ── ZONE AUDIO ──
+    private JPanel buildAudioArea() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBackground(BG_CALL);
+        JPanel avatar = buildBigAvatar(contactName, 140);
+        panel.add(avatar);
         return panel;
     }
 
+    // ── ZONE VIDÉO plein écran ──
     private JPanel buildVideoArea() {
         JPanel panel = new JPanel(new BorderLayout());
-        panel.setBackground(new Color(10, 14, 22));
+        panel.setBackground(new Color(8, 10, 18));
 
-        // Zone distante (fond + avatar + statut)
+        // Fond : avatar contact au centre
         JPanel remoteArea = new JPanel(new GridBagLayout());
         remoteArea.setOpaque(true);
-        remoteArea.setBackground(new Color(10, 14, 22));
+        remoteArea.setBackground(new Color(8, 10, 18));
+        remoteArea.add(buildBigAvatar(contactName, 110));
 
-        JPanel remoteContent = new JPanel();
-        remoteContent.setLayout(new BoxLayout(remoteContent, BoxLayout.Y_AXIS));
-        remoteContent.setOpaque(false);
+        // Vue de soi
+        webcamPanel = new WebcamPanel(400, 280);
+        webcamPanel.start();
 
-        JPanel remoteAvatar = buildBigAvatar(contactName, 70);
-        remoteAvatar.setAlignmentX(Component.CENTER_ALIGNMENT);
+        JPanel selfPanel = new JPanel(new BorderLayout());
+        selfPanel.setBackground(new Color(10, 20, 40));
+        selfPanel.setBorder(BorderFactory.createLineBorder(GREEN, 2));
+        selfPanel.add(webcamPanel, BorderLayout.CENTER);
 
-        JLabel remoteName = new JLabel(contactName);
-        remoteName.setForeground(Color.WHITE);
-        remoteName.setFont(new Font("Segoe UI", Font.BOLD, 16));
-        remoteName.setAlignmentX(Component.CENTER_ALIGNMENT);
+        JLabel meLabel = new JLabel("  Moi");
+        meLabel.setForeground(new Color(180, 200, 180));
+        meLabel.setBackground(new Color(0, 0, 0, 160));
+        meLabel.setOpaque(true);
+        meLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        meLabel.setPreferredSize(new Dimension(0, 20));
+        selfPanel.add(meLabel, BorderLayout.SOUTH);
 
-        statusLabel = new JLabel(isIncoming
-                ? "📲  Appel entrant…" : "📡  En attente de réponse…");
-        statusLabel.setForeground(new Color(140, 150, 170));
-        statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        statusLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-        timerLabel = new JLabel("0:00");
-        timerLabel.setForeground(GREEN);
-        timerLabel.setFont(new Font("Segoe UI Mono", Font.BOLD, 16));
-        timerLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        timerLabel.setVisible(false); // ✅ caché jusqu'à connexion
-
-        remoteContent.add(remoteAvatar);
-        remoteContent.add(Box.createVerticalStrut(12));
-        remoteContent.add(remoteName);
-        remoteContent.add(Box.createVerticalStrut(6));
-        remoteContent.add(statusLabel);
-        remoteContent.add(Box.createVerticalStrut(6));
-        remoteContent.add(timerLabel);
-        remoteArea.add(remoteContent);
-
-        // Vue de soi (petite fenêtre caméra)
-        JPanel selfView = buildSelfView();
-
+        // Layered pane — s'adapte au redimensionnement
         JLayeredPane layered = new JLayeredPane();
         layered.setLayout(null);
-        remoteArea.setBounds(0, 0, 480, 460);
+
+        layered.addComponentListener(new ComponentAdapter() {
+            @Override public void componentResized(ComponentEvent e) {
+                int lw = layered.getWidth();
+                int lh = layered.getHeight();
+                remoteArea.setBounds(0, 0, lw, lh);
+                selfPanel.setBounds(lw - 430, lh - 310, 400, 290);
+            }
+        });
+
         layered.add(remoteArea, JLayeredPane.DEFAULT_LAYER);
-        selfView.setBounds(310, 340, 155, 110);
-        layered.add(selfView, JLayeredPane.PALETTE_LAYER);
-        layered.setPreferredSize(new Dimension(480, 460));
+        layered.add(selfPanel,  JLayeredPane.PALETTE_LAYER);
 
         panel.add(layered, BorderLayout.CENTER);
         return panel;
     }
 
-    private JPanel buildSelfView() {
-        JPanel selfPanel = new JPanel(new BorderLayout());
-        selfPanel.setBackground(new Color(10, 20, 40));
-        selfPanel.setBorder(BorderFactory.createLineBorder(GREEN, 2));
-
-        // ✅ FIX CAMÉRA : crée WebcamPanel seulement pour appel vidéo
-        webcamPanel = new WebcamPanel(155, 88);
-        webcamPanel.start();
-        selfPanel.add(webcamPanel, BorderLayout.CENTER);
-
-        JLabel meLabel = new JLabel("  Moi");
-        meLabel.setForeground(new Color(180, 200, 180));
-        meLabel.setBackground(new Color(0, 0, 0, 150));
-        meLabel.setOpaque(true);
-        meLabel.setFont(new Font("Segoe UI", Font.PLAIN, 10));
-        meLabel.setPreferredSize(new Dimension(0, 18));
-        selfPanel.add(meLabel, BorderLayout.SOUTH);
-        return selfPanel;
-    }
-
-    // ────────────────────────────────────────────────────────────
-    // CONTRÔLES — Boutons WhatsApp-style bien visibles
-    // ────────────────────────────────────────────────────────────
+    // ── CONTRÔLES BAS ──
     private JPanel buildControls() {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setBackground(BG_OVERLAY);
-        panel.setBorder(new EmptyBorder(18, 20, 22, 20));
+        panel.setBackground(new Color(10, 14, 24));
+        panel.setBorder(new EmptyBorder(20, 20, 30, 20));
 
-        JPanel btns = new JPanel(new FlowLayout(FlowLayout.CENTER, 16, 0));
+        JPanel btns = new JPanel(new FlowLayout(FlowLayout.CENTER, 28, 0));
         btns.setOpaque(false);
 
         if (isIncoming) {
-            // ✅ Appel entrant : ACCEPTER (vert) + REFUSER (rouge)
-            JButton acceptBtn = makeCallBtn("📞", "Accepter", GREEN, 64);
+            JButton acceptBtn = makeCallBtn("📞", "Accepter", GREEN, 72);
+            JButton rejectBtn = makeCallBtn("📵", "Refuser",  RED,   72);
+
             acceptBtn.addActionListener(e -> {
                 connected = true;
                 acceptBtn.setVisible(false);
@@ -273,39 +206,29 @@ public class CallView extends JDialog {
                     statusLabel.setText("✅  Connecté");
                     timerLabel.setVisible(true);
                 });
-                // Notifier le serveur qu'on a accepté
-                // (à appeler via SocketManager depuis ChatView si disponible)
+                if (acceptCallback != null) acceptCallback.run();
             });
 
-            JButton rejectBtn = makeCallBtn("📵", "Refuser", RED, 64);
             rejectBtn.addActionListener(e -> hangUp());
 
-            // Labels sous les boutons
-            JLabel lblAccept = makeBtnLabel("Accepter", GREEN);
-            JLabel lblReject = makeBtnLabel("Refuser",  RED);
-
-            JPanel acceptCol = column(acceptBtn, lblAccept);
-            JPanel rejectCol = column(rejectBtn, lblReject);
-            btns.add(acceptCol);
-            btns.add(rejectCol);
+            btns.add(column(acceptBtn, makeBtnLabel("Accepter", GREEN)));
+            btns.add(column(rejectBtn, makeBtnLabel("Refuser",  RED)));
 
         } else {
-            // ✅ Appel sortant : MUET + [CAMÉRA si vidéo] + RACCROCHER
+            JButton muteBtn   = makeCallBtn("🎤", "Muet",       GRAY_BTN, 62);
+            JButton hangUpBtn = makeCallBtn("📵", "Raccrocher", RED,      72);
 
-            JButton muteBtn = makeCallBtn("🎤", "Muet", GRAY_BTN, 56);
             muteBtn.addActionListener(e -> {
                 boolean muted = "🔇".equals(muteBtn.getText());
                 muteBtn.setText(muted ? "🎤" : "🔇");
                 muteBtn.setBackground(muted ? GRAY_BTN : RED);
             });
-
-            JButton hangUpBtn = makeCallBtn("📵", "Raccrocher", RED, 64);
             hangUpBtn.addActionListener(e -> hangUp());
 
             btns.add(column(muteBtn, makeBtnLabel("Muet", Color.LIGHT_GRAY)));
 
             if ("video".equals(callType)) {
-                JButton camBtn = makeCallBtn("📹", "Caméra", GRAY_BTN, 56);
+                JButton camBtn = makeCallBtn("📹", "Caméra", GRAY_BTN, 62);
                 camBtn.addActionListener(e -> {
                     if (webcamPanel != null) {
                         webcamPanel.togglePause();
@@ -323,7 +246,6 @@ public class CallView extends JDialog {
         return panel;
     }
 
-    /** Colonne : bouton + label dessous */
     private JPanel column(JButton btn, JLabel label) {
         JPanel col = new JPanel();
         col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
@@ -339,16 +261,14 @@ public class CallView extends JDialog {
     private JLabel makeBtnLabel(String text, Color color) {
         JLabel l = new JLabel(text);
         l.setForeground(color);
-        l.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        l.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         return l;
     }
 
-    // ────────────────────────────────────────────────────────────
-    // ✅ TIMER : ne tourne QUE si connected = true
-    // ────────────────────────────────────────────────────────────
+    // ── TIMER ──
     private void startTimer() {
         uiTimer = new javax.swing.Timer(1000, e -> {
-            if (!connected) return; // ✅ Bloqué jusqu'à acceptation
+            if (!connected) return;
             seconds++;
             int m = seconds / 60, s = seconds % 60;
             if (timerLabel != null) {
@@ -359,11 +279,7 @@ public class CallView extends JDialog {
         uiTimer.start();
     }
 
-    // ────────────────────────────────────────────────────────────
-    // API PUBLIQUE : appelée depuis ChatView quand signal reçu
-    // ────────────────────────────────────────────────────────────
-
-    /** CALL_ACCEPTED reçu → démarrer le timer */
+    // ── API PUBLIQUE ──
     public void onCallAccepted() {
         connected = true;
         SwingUtilities.invokeLater(() -> {
@@ -372,7 +288,6 @@ public class CallView extends JDialog {
         });
     }
 
-    /** CALL_REJECTED reçu → afficher message + fermer */
     public void onCallRejected() {
         SwingUtilities.invokeLater(() -> {
             if (statusLabel != null) statusLabel.setText("❌  Appel refusé");
@@ -380,37 +295,36 @@ public class CallView extends JDialog {
         });
     }
 
-    /** CALL_ENDED reçu → fermer */
     public void onCallEnded() {
         SwingUtilities.invokeLater(this::hangUp);
     }
 
-    // ────────────────────────────────────────────────────────────
-    // HANG UP
-    // ────────────────────────────────────────────────────────────
-    private void hangUp() {
-        if (uiTimer    != null) uiTimer.stop();
+    // ── FORCE STOP (appelé avant nouveau appel) ──
+    public void forceStop() {
+        if (uiTimer     != null) uiTimer.stop();
         if (webcamPanel != null) webcamPanel.stop();
-        if (onHangUp   != null) onHangUp.run();
         dispose();
     }
 
-    // ────────────────────────────────────────────────────────────
-    // UTILITAIRES
-    // ────────────────────────────────────────────────────────────
+    // ── HANG UP ──
+    private void hangUp() {
+        if (uiTimer     != null) uiTimer.stop();
+        if (webcamPanel != null) webcamPanel.stop();
+        if (onHangUp    != null) onHangUp.run();
+        dispose();
+    }
+
+    // ── AVATAR ──
     private JPanel buildBigAvatar(String name, int size) {
         JPanel av = new JPanel() {
             @Override protected void paintComponent(Graphics g) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
                         RenderingHints.VALUE_ANTIALIAS_ON);
-                // Halo vert
                 g2.setColor(new Color(37, 211, 102, 35));
                 g2.fillOval(-12, -12, size + 24, size + 24);
-                // Cercle principal
                 g2.setColor(GREEN);
                 g2.fillOval(0, 0, size, size);
-                // Initiale
                 g2.setColor(Color.WHITE);
                 g2.setFont(new Font("Segoe UI", Font.BOLD, size / 2 - 2));
                 FontMetrics fm = g2.getFontMetrics();
@@ -428,7 +342,7 @@ public class CallView extends JDialog {
         return av;
     }
 
-    /** Bouton rond style WhatsApp Call */
+    // ── BOUTON ROND ──
     private JButton makeCallBtn(String icon, String tooltip, Color bg, int size) {
         JButton btn = new JButton(icon) {
             @Override protected void paintComponent(Graphics g) {
@@ -455,14 +369,99 @@ public class CallView extends JDialog {
     }
 
     // ────────────────────────────────────────────────────────────
-    // WEBCAM PANEL (simulation, remplacer par vraie caméra)
+    // WEBCAM PANEL — Caméra ouverte une seule fois (singleton)
     // ────────────────────────────────────────────────────────────
     static class WebcamPanel extends JPanel {
+
+        // ✅ Caméra STATIQUE — ouverte une fois pour toute la session
+        private static org.opencv.videoio.VideoCapture sharedCamera = null;
+        private static Thread sharedThread = null;
+        private static volatile BufferedImage sharedFrame = null;
+        private static volatile boolean cameraRunning = false;
+
+        /** Ouvrir la caméra partagée — appeler au démarrage de l'app */
+        public static void initSharedCamera() {
+            if (sharedCamera != null && sharedCamera.isOpened()) return;
+            cameraRunning = true;
+            sharedThread = new Thread(() -> {
+                try {
+                    // ✅ Essayer MSMF d'abord (plus rapide), puis DSHOW
+                    sharedCamera = new org.opencv.videoio.VideoCapture(0);
+                    if (!sharedCamera.isOpened()) {
+                        sharedCamera.release();
+                        sharedCamera = new org.opencv.videoio.VideoCapture(
+                                0, org.opencv.videoio.Videoio.CAP_DSHOW);
+                    }
+                    if (!sharedCamera.isOpened()) {
+                        System.err.println("[Camera] Impossible d'ouvrir la caméra");
+                        return;
+                    }
+                    sharedCamera.set(org.opencv.videoio.Videoio.CAP_PROP_FRAME_WIDTH,  640);
+                    sharedCamera.set(org.opencv.videoio.Videoio.CAP_PROP_FRAME_HEIGHT, 480);
+                    sharedCamera.set(org.opencv.videoio.Videoio.CAP_PROP_FPS, 30);
+                    System.out.println("[Camera] Caméra partagée ouverte : "
+                            + sharedCamera.getBackendName());
+
+                    // ✅ Lire jusqu'à frame valide AVANT de continuer
+                    org.opencv.core.Mat warmup = new org.opencv.core.Mat();
+                    int tries = 0;
+                    while (tries++ < 100) {
+                        if (sharedCamera.read(warmup) && !warmup.empty()) {
+                            org.opencv.core.Scalar mean = org.opencv.core.Core.mean(warmup);
+                            if (mean.val[0] > 1 || mean.val[1] > 1 || mean.val[2] > 1) {
+                                sharedFrame = convertMat(warmup);
+                                System.out.println("[Camera] Première frame valide ! tries=" + tries);
+                                break;
+                            }
+                        }
+                        Thread.sleep(50);
+                    }
+                    warmup.release();
+                    System.out.println("[Camera] Caméra partagée prête !");
+
+                    org.opencv.core.Mat mat = new org.opencv.core.Mat();
+                    while (cameraRunning) {
+                        if (sharedCamera.read(mat) && !mat.empty()) {
+                            sharedFrame = convertMat(mat);
+                        }
+                        Thread.sleep(33);
+                    }
+                    mat.release();
+                    sharedCamera.release();
+                    sharedCamera = null;
+                    System.out.println("[Camera] Caméra partagée libérée.");
+                } catch (Exception e) {
+                    System.err.println("[Camera] Erreur : " + e.getMessage());
+                }
+            }, "SharedCamera");
+            sharedThread.setDaemon(true);
+            sharedThread.start();
+        }
+
+        /** Arrêter la caméra partagée — appeler à la fermeture de l'app */
+        public static void stopSharedCamera() {
+            cameraRunning = false;
+        }
+
+        private static BufferedImage convertMat(org.opencv.core.Mat mat) {
+            org.opencv.core.Mat rgb = new org.opencv.core.Mat();
+            if (mat.channels() == 3)
+                org.opencv.imgproc.Imgproc.cvtColor(mat, rgb, org.opencv.imgproc.Imgproc.COLOR_BGR2RGB);
+            else
+                mat.copyTo(rgb);
+            BufferedImage img = new BufferedImage(rgb.width(), rgb.height(), BufferedImage.TYPE_3BYTE_BGR);
+            byte[] data = new byte[(int)(rgb.total() * rgb.elemSize())];
+            rgb.get(0, 0, data);
+            img.getRaster().setDataElements(0, 0, rgb.width(), rgb.height(), data);
+            rgb.release();
+            return img;
+        }
+
+        // ── Instance ──
         private volatile boolean running = false;
         private volatile boolean paused  = false;
-        private volatile BufferedImage frame;
         private final int w, h;
-        private Thread captureThread;
+        private javax.swing.Timer displayTimer;
 
         WebcamPanel(int w, int h) {
             this.w = w; this.h = h;
@@ -473,47 +472,38 @@ public class CallView extends JDialog {
 
         public void start() {
             running = true;
-            captureThread = new Thread(this::captureLoop, "WebcamCapture");
-            captureThread.setDaemon(true);
-            captureThread.start();
+            // ✅ Timer qui affiche la frame partagée toutes les 33ms
+            displayTimer = new javax.swing.Timer(33, e -> {
+                if (running && !paused && sharedFrame != null) {
+                    repaint();
+                }
+            });
+            displayTimer.start();
         }
 
         public void stop() {
             running = false;
-            if (captureThread != null) captureThread.interrupt();
+            if (displayTimer != null) displayTimer.stop();
         }
 
         public void togglePause() { paused = !paused; }
         public boolean isPaused() { return paused; }
 
-        private void captureLoop() {
-            int dots = 0;
-            while (running) {
-                if (!paused) {
-                    frame = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
-                    Graphics2D g2 = frame.createGraphics();
-                    g2.setColor(new Color(15, 25, 45));
-                    g2.fillRect(0, 0, w, h);
-                    g2.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 26));
-                    g2.setColor(new Color(60, 90, 130));
-                    g2.drawString("📷", w / 2 - 14, h / 2 - 4);
-                    g2.setFont(new Font("Segoe UI", Font.PLAIN, 9));
-                    g2.setColor(new Color(100, 130, 180));
-                    g2.drawString("Caméra active" + ".".repeat(dots % 3 + 1),
-                            w / 2 - 30, h / 2 + 14);
-                    g2.dispose();
-                    dots++;
-                    SwingUtilities.invokeLater(this::repaint);
-                }
-                try { Thread.sleep(500); }
-                catch (InterruptedException e) { break; }
-            }
-        }
-
         @Override protected void paintComponent(Graphics g) {
             super.paintComponent(g);
-            if (frame != null) g.drawImage(frame, 0, 0, w, h, null);
-            else { g.setColor(new Color(15, 25, 45)); g.fillRect(0, 0, w, h); }
+            BufferedImage f = sharedFrame;
+            System.out.println("[Paint] sharedFrame=" + (f != null ? f.getWidth()+"x"+f.getHeight() : "NULL")
+                    + " size=" + getWidth() + "x" + getHeight()
+                    + " visible=" + isVisible());
+            if (f != null) {
+                g.drawImage(f, 0, 0, w, h, null);
+            } else {
+                g.setColor(new Color(20, 30, 50));
+                g.fillRect(0, 0, w, h);
+                g.setColor(new Color(100, 130, 180));
+                g.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+                g.drawString("Activation camera...", 10, h / 2);
+            }
         }
     }
 }

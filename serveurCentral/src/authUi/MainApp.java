@@ -9,6 +9,16 @@ import javax.swing.*;
 public class MainApp {
 
     public static void main(String[] args) {
+
+        // ✅ Charger OpenCV UNE SEULE FOIS ici, avant tout
+        try {
+            System.loadLibrary(org.opencv.core.Core.NATIVE_LIBRARY_NAME);
+            System.out.println("[MainApp] OpenCV chargé : "
+                    + org.opencv.core.Core.VERSION);
+        } catch (UnsatisfiedLinkError e) {
+            System.err.println("[MainApp] OpenCV non trouvé : " + e.getMessage());
+        }
+
         SwingUtilities.invokeLater(() -> {
 
             NetworkClient network = new NetworkClient("localhost", 5000);
