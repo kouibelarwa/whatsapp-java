@@ -2,6 +2,8 @@ package dao;
 
 import model.User;
 import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
 
 public class UserDao {
 
@@ -164,6 +166,51 @@ public class UserDao {
     }
 
     public User searchByPhone(String phone) {
-        return getByPhone(phone);
+        User exact = getByPhone(phone);
+        if (exact != null) return exact;
+
+        String targetDigits = normalizeDigits(phone);
+        if (targetDigits.isEmpty()) return null;
+
+        String sql = "SELECT * FROM users";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+
+            List<User> candidates = new ArrayList<>();
+            while (rs.next()) {
+                candidates.add(new User(
+                        rs.getInt("id"),
+                        rs.getString("phone"),
+                        rs.getString("username"),
+                        rs.getString("verification_code"),
+                        rs.getBoolean("verified"),
+                        rs.getString("status")
+                ));
+            }
+
+            for (User u : candidates) {
+                String dbDigits = normalizeDigits(u.getPhone());
+                if (dbDigits.equals(targetDigits)
+                        || dbDigits.equals(stripInternationalPrefix(targetDigits))
+                        || stripInternationalPrefix(dbDigits).equals(targetDigits)) {
+                    return u;
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    private String normalizeDigits(String input) {
+        if (input == null) return "";
+        return input.replaceAll("[^0-9]", "");
+    }
+
+    private String stripInternationalPrefix(String digits) {
+        if (digits == null) return "";
+        if (digits.startsWith("00") && digits.length() > 2) return digits.substring(2);
+        return digits;
     }
 }

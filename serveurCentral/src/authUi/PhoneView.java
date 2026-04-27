@@ -2,113 +2,94 @@ package authUi;
 
 import auth.AuthService;
 import client.NetworkClient;
-
-import javax.swing.*;
-import javax.swing.border.EmptyBorder;
-import java.awt.*;
+import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
+import javafx.stage.Stage;
 
 public class PhoneView {
-
-    private final AuthService   auth;
+    private final AuthService auth;
     private final NetworkClient network;
 
-    private JFrame     frame;
-    private JTextField phoneField;
-    private JButton    btnSend;
-    private JLabel     statusLabel;
-
     public PhoneView(AuthService auth, NetworkClient network) {
-        this.auth    = auth;
+        this.auth = auth;
         this.network = network;
     }
-
-    /** Compatibilité ancien constructeur. */
+    
     public PhoneView(AuthService auth) {
         this(auth, auth.getNetwork());
     }
 
-    public void show() {
-        frame = new JFrame("WhatsApp — Connexion");
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(400, 280);
-        frame.setLocationRelativeTo(null);
-        frame.setResizable(false);
+    public void start(Stage stage) {
+        VBox root = new VBox(15);
+        root.setAlignment(Pos.CENTER);
+        root.setPadding(new Insets(40, 50, 40, 50));
+        root.setStyle("-fx-background-color: #121212;");
 
-        JPanel main = new JPanel();
-        main.setLayout(new BoxLayout(main, BoxLayout.Y_AXIS));
-        main.setBackground(new Color(18, 18, 18));
-        main.setBorder(new EmptyBorder(40, 50, 40, 50));
+        Label title = new Label("WhatsApp");
+        title.setStyle("-fx-text-fill: #25D366; -fx-font-size: 26px; -fx-font-weight: bold;");
 
-        JLabel title = new JLabel("WhatsApp");
-        title.setForeground(new Color(37, 211, 102));
-        title.setFont(new Font("Segoe UI", Font.BOLD, 26));
-        title.setAlignmentX(Component.CENTER_ALIGNMENT);
+        Label sub = new Label("Entrez votre numéro de téléphone");
+        sub.setStyle("-fx-text-fill: #969696; -fx-font-size: 13px;");
 
-        JLabel sub = new JLabel("Entrez votre numéro de téléphone");
-        sub.setForeground(new Color(150, 150, 150));
-        sub.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        sub.setAlignmentX(Component.CENTER_ALIGNMENT);
+        TextField phoneField = new TextField();
+        phoneField.setStyle("-fx-background-color: #1e1e1e; -fx-text-fill: white; -fx-border-color: #25D366; -fx-border-radius: 5px; -fx-background-radius: 5px;");
+        phoneField.setPrefHeight(40);
 
-        phoneField = new JTextField();
-        phoneField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
-        phoneField.setBackground(new Color(30, 30, 30));
-        phoneField.setForeground(Color.WHITE);
-        phoneField.setCaretColor(Color.WHITE);
-        phoneField.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(37, 211, 102)),
-                new EmptyBorder(5, 10, 5, 10)));
-        phoneField.setFont(new Font("Segoe UI", Font.PLAIN, 15));
+        Label statusLabel = new Label(" ");
+        statusLabel.setTextFill(Color.RED);
 
-        btnSend = new JButton("Envoyer le code");
-        btnSend.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
-        btnSend.setBackground(new Color(37, 211, 102));
-        btnSend.setForeground(Color.BLACK);
-        btnSend.setFont(new Font("Segoe UI", Font.BOLD, 15));
-        btnSend.setBorderPainted(false);
-        btnSend.setFocusPainted(false);
-        btnSend.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        btnSend.addActionListener(e -> sendCode());
-        phoneField.addActionListener(e -> sendCode());
+        Button btnSend = new Button("Envoyer le code");
+        btnSend.setStyle("-fx-background-color: #25D366; -fx-text-fill: black; -fx-font-size: 15px; -fx-font-weight: bold; -fx-background-radius: 5px;");
+        btnSend.setPrefHeight(42);
+        btnSend.setMaxWidth(Double.MAX_VALUE);
 
-        statusLabel = new JLabel(" ");
-        statusLabel.setForeground(Color.RED);
-        statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        statusLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        btnSend.setOnAction(e -> sendCode(phoneField.getText(), btnSend, statusLabel, stage));
+        phoneField.setOnAction(e -> sendCode(phoneField.getText(), btnSend, statusLabel, stage));
 
-        main.add(title);
-        main.add(Box.createVerticalStrut(6));
-        main.add(sub);
-        main.add(Box.createVerticalStrut(25));
-        main.add(phoneField);
-        main.add(Box.createVerticalStrut(15));
-        main.add(btnSend);
-        main.add(Box.createVerticalStrut(10));
-        main.add(statusLabel);
+        root.getChildren().addAll(title, sub, phoneField, btnSend, statusLabel);
 
-        frame.setContentPane(main);
-        frame.setVisible(true);
-        phoneField.requestFocusInWindow();
+        Scene scene = new Scene(root, 400, 280);
+        stage.setTitle("WhatsApp — Connexion");
+        stage.setScene(scene);
+        stage.setResizable(false);
+        stage.show();
     }
 
-    private void sendCode() {
-        String phone = phoneField.getText().trim();
+    private void sendCode(String phoneText, Button btnSend, Label statusLabel, Stage stage) {
+        String phone = normalizePhone(phoneText);
         if (phone.isEmpty()) {
             statusLabel.setText("Veuillez entrer un numéro.");
             return;
         }
-        btnSend.setEnabled(false);
+        btnSend.setDisable(true);
         btnSend.setText("Envoi...");
         statusLabel.setText(" ");
 
         auth.requestCode(phone,
-                () -> SwingUtilities.invokeLater(() -> {
-                    frame.dispose();
-                    new CodeView(phone, auth, network).show();
+                () -> Platform.runLater(() -> {
+                    stage.close();
+                    new CodeView(phone, auth, network).start(new Stage());
                 }),
-                () -> SwingUtilities.invokeLater(() -> {
+                () -> Platform.runLater(() -> {
                     statusLabel.setText("Erreur : impossible d'envoyer le code.");
-                    btnSend.setEnabled(true);
+                    btnSend.setDisable(false);
                     btnSend.setText("Envoyer le code");
                 }));
+    }
+
+    private String normalizePhone(String input) {
+        if (input == null) return "";
+        String normalized = input.replaceAll("[\\s\\-()]", "");
+        if (normalized.startsWith("00")) {
+            normalized = "+" + normalized.substring(2);
+        }
+        return normalized.trim();
     }
 }

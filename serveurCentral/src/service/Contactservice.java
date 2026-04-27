@@ -15,24 +15,48 @@ public class Contactservice {
     public void handle(int userId, String userPhone, String payload, ClientHandler handler) {
         if (payload.startsWith("ADD:")) {
             String[] parts = payload.substring(4).split(":", 2);
-            String targetPhone = parts[0].trim();
+            String targetPhone = normalizePhone(parts[0]);
             String nickname = parts.length > 1 ? parts[1].trim() : null;
+            String currentUserPhone = normalizePhone(userPhone);
 
-            User target = userDao.getByPhone(targetPhone);
+            // ✅ Empêcher de s'ajouter soi-même
+            if (targetPhone.equals(currentUserPhone)) {
+                sendResponse(handler, "ADD_FAIL:SELF");
+                return;
+            }
+            if (targetPhone.isEmpty()) {
+                sendResponse(handler, "ADD_FAIL:NOT_FOUND");
+                return;
+            }
+
+            User target = userDao.searchByPhone(targetPhone);
+
+            System.out.println("[Contactservice] ADD demandé : " + targetPhone
+                    + " → trouvé : " + (target != null ? target.getId() : "NULL")); // DEBUG
+
             if (target != null) {
-                contactDao.addContact(userId, target.getId(), nickname);
+                boolean added = contactDao.addContact(userId, target.getId(), nickname);
+                System.out.println("[Contactservice] addContact résultat : " + added); // DEBUG
+                if (!added) {
+                    sendResponse(handler, "ADD_FAIL:DB");
+                    return;
+                }
+                sendResponse(handler, "ADD_OK:" + targetPhone);
                 handleGet(userId, handler);
             } else {
                 sendResponse(handler, "ADD_FAIL:NOT_FOUND");
             }
-        } else if (payload.equals("GET_CONTACTS")) {  // ← AJOUTER ÇA !
+
+        } else if (payload.equals("GET_CONTACTS")) {
             handleGet(userId, handler);
-        } else if (payload.startsWith("REMOVE:")) {  // ← AJOUTER ÇA
-            String targetPhone = payload.substring(7).trim();
-            User target = userDao.getByPhone(targetPhone);
+
+        } else if (payload.startsWith("REMOVE:")) {
+            String targetPhone = normalizePhone(payload.substring(7));
+            User target = userDao.searchByPhone(targetPhone);
             if (target != null) {
                 contactDao.removeContact(userId, target.getId());
             }
+            handleGet(userId, handler); // ✅ Renvoyer la liste après suppression
         }
     }
 
@@ -59,5 +83,14 @@ public class Contactservice {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    private String normalizePhone(String input) {
+        if (input == null) return "";
+        String normalized = input.replaceAll("[\\s\\-()]", "");
+        if (normalized.startsWith("00")) {
+            normalized = "+" + normalized.substring(2);
+        }
+        return normalized.trim();
     }
 }

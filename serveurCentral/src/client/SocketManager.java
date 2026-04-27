@@ -55,11 +55,12 @@ public class SocketManager {
         new Thread(() -> {
             try {
                 while (true) {
-                    String type = binIn.readUTF();
-                    String sender = binIn.readUTF();
-                    String filename = binIn.readUTF();
-                    int size = binIn.readInt();
-                    byte[] data = new byte[size];
+                    String type     = binIn.readUTF();
+                    String sender   = binIn.readUTF();
+                    String ignored  = binIn.readUTF(); // ✅ receiverPhone (ignoré)
+                    String filename = binIn.readUTF(); // ✅ filename correct
+                    int size        = binIn.readInt();
+                    byte[] data     = new byte[size];
                     binIn.readFully(data);
                     listener.onMessage(type, sender, filename, data);
                 }

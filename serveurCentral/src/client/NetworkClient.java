@@ -4,44 +4,54 @@ import java.io.*;
 import java.net.Socket;
 
 public class NetworkClient {
-
     private final String host;
-    private final int    port;
-
-    private Socket        socket;
-    private PrintWriter   out;
-    private BufferedReader in;
+    private final int port;
+    private Socket socket;
+    private DataOutputStream out;
+    private DataInputStream in;
 
     public NetworkClient(String host, int port) {
         this.host = host;
         this.port = port;
     }
 
-    public void connect() throws IOException {
-        if (socket != null && !socket.isClosed()) {
-            try { socket.close(); } catch (Exception ignored) {}
+    // Connexion automatique sécurisée
+    private void ensureConnected() throws IOException {
+        if (socket == null || socket.isClosed() || out == null || in == null) {
+            System.out.println("[NetworkClient] Tentative connexion → " + host + ":" + port);
+            socket = new Socket(host, port);
+            System.out.println("[NetworkClient] Connecté ✅");
+            out = new DataOutputStream(socket.getOutputStream());
+            in  = new DataInputStream(socket.getInputStream());
         }
-        socket = new Socket(host, port);
-        out    = new PrintWriter(socket.getOutputStream(), true);
-        in     = new BufferedReader(
-                new InputStreamReader(socket.getInputStream()));
-        SocketManager.getInstance().initAuth(socket, -1, null);
     }
 
     public String send(String message) {
         try {
-            out.println(message);
-            return in.readLine();
+            // 1. On s'assure d'être connecté avant d'envoyer
+            ensureConnected();
+
+            // 2. Envoi
+            out.writeUTF(message);
+            out.flush();
+
+            // 3. Réception
+            return in.readUTF();
         } catch (Exception e) {
-            System.err.println("Network error: " + e.getMessage());
+            System.err.println("[NetworkClient] ERREUR : " + e.getClass().getSimpleName()
+                    + " → " + e.getMessage());
+            // Si une erreur survient, on réinitialise pour la prochaine fois
+            try { if (socket != null) socket.close(); } catch (Exception ignored) {}
+            socket = null;
             return null;
         }
     }
 
-    public Socket getSocket() { return socket; }
-
-    public void close() {
-        try { if (socket != null) socket.close(); }
-        catch (IOException ignored) {}
+    public void connect() throws IOException {
+        ensureConnected();
+    }
+    // ✅ NOUVEAU : expose le socket actif pour SocketManager
+    public Socket getSocket() {
+        return socket;
     }
 }

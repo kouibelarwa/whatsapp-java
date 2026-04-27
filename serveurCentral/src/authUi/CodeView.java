@@ -3,121 +3,80 @@ package authUi;
 import auth.AuthService;
 import client.NetworkClient;
 import client.SocketManager;
-
-import javax.swing.*;
-import javax.swing.border.EmptyBorder;
-import java.awt.*;
+import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
+import javafx.stage.Stage;
 
 public class CodeView {
-
-    private final String        phone;
-    private final AuthService   auth;
+    private final String phone;
+    private final AuthService auth;
     private final NetworkClient network;
 
-    private JFrame     frame;
-    private JTextField codeField;
-    private JTextField usernameField;
-    private JButton    btnVerify;
-    private JLabel     statusLabel;
-
     public CodeView(String phone, AuthService auth, NetworkClient network) {
-        this.phone   = phone;
-        this.auth    = auth;
+        this.phone = phone;
+        this.auth = auth;
         this.network = network;
     }
 
-    public void show() {
-        frame = new JFrame("Vérification du code");
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(400, 340);
-        frame.setLocationRelativeTo(null);
-        frame.setResizable(false);
+    public void start(Stage stage) {
+        VBox root = new VBox(15);
+        root.setAlignment(Pos.CENTER);
+        root.setPadding(new Insets(35, 50, 35, 50));
+        root.setStyle("-fx-background-color: #121212;");
 
-        JPanel main = new JPanel();
-        main.setLayout(new BoxLayout(main, BoxLayout.Y_AXIS));
-        main.setBackground(new Color(18, 18, 18));
-        main.setBorder(new EmptyBorder(35, 50, 35, 50));
+        Label title = new Label("Vérification");
+        title.setStyle("-fx-text-fill: white; -fx-font-size: 22px; -fx-font-weight: bold;");
 
-        JLabel title = new JLabel("Vérification");
-        title.setForeground(Color.WHITE);
-        title.setFont(new Font("Segoe UI", Font.BOLD, 22));
-        title.setAlignmentX(Component.CENTER_ALIGNMENT);
+        Label sub = new Label("Code envoyé au : " + phone);
+        sub.setStyle("-fx-text-fill: #969696; -fx-font-size: 12px;");
 
-        JLabel sub = new JLabel("Code envoyé au : " + phone);
-        sub.setForeground(new Color(150, 150, 150));
-        sub.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        sub.setAlignmentX(Component.CENTER_ALIGNMENT);
+        TextField codeField = new TextField();
+        codeField.setPromptText("Code SMS");
+        codeField.setStyle(
+                "-fx-background-color: #1e1e1e; -fx-text-fill: white; -fx-border-color: #25D366; -fx-border-radius: 5px; -fx-background-radius: 5px;");
+        codeField.setPrefHeight(40);
+        codeField.setAlignment(Pos.CENTER);
 
-        JLabel lblCode = new JLabel("Code SMS");
-        lblCode.setForeground(new Color(200, 200, 200));
-        lblCode.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        TextField usernameField = new TextField();
+        usernameField.setPromptText("Votre nom (pseudo)");
+        usernameField.setStyle(
+                "-fx-background-color: #1e1e1e; -fx-text-fill: white; -fx-border-color: #3c3c3c; -fx-border-radius: 5px; -fx-background-radius: 5px;");
+        usernameField.setPrefHeight(40);
 
-        codeField = new JTextField();
-        codeField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
-        codeField.setBackground(new Color(30, 30, 30));
-        codeField.setForeground(Color.WHITE);
-        codeField.setCaretColor(Color.WHITE);
-        codeField.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(37, 211, 102)),
-                new EmptyBorder(5, 10, 5, 10)));
-        codeField.setFont(new Font("Segoe UI", Font.PLAIN, 16));
-        codeField.setHorizontalAlignment(JTextField.CENTER);
+        Label statusLabel = new Label(" ");
+        statusLabel.setTextFill(Color.RED);
 
-        JLabel lblUser = new JLabel("Votre nom (pseudo)");
-        lblUser.setForeground(new Color(200, 200, 200));
-        lblUser.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        Button btnVerify = new Button("Vérifier");
+        btnVerify.setStyle(
+                "-fx-background-color: #25D366; -fx-text-fill: black; -fx-font-size: 15px; -fx-font-weight: bold; -fx-background-radius: 5px;");
+        btnVerify.setPrefHeight(42);
+        btnVerify.setMaxWidth(Double.MAX_VALUE);
 
-        usernameField = new JTextField();
-        usernameField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
-        usernameField.setBackground(new Color(30, 30, 30));
-        usernameField.setForeground(Color.WHITE);
-        usernameField.setCaretColor(Color.WHITE);
-        usernameField.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(60, 60, 60)),
-                new EmptyBorder(5, 10, 5, 10)));
-        usernameField.setFont(new Font("Segoe UI", Font.PLAIN, 15));
+        btnVerify.setOnAction(
+                e -> verifyCode(codeField.getText(), usernameField.getText(), btnVerify, statusLabel, stage));
+        usernameField.setOnAction(
+                e -> verifyCode(codeField.getText(), usernameField.getText(), btnVerify, statusLabel, stage));
+        codeField.setOnAction(e -> usernameField.requestFocus());
 
-        btnVerify = new JButton("Vérifier");
-        btnVerify.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
-        btnVerify.setBackground(new Color(37, 211, 102));
-        btnVerify.setForeground(Color.BLACK);
-        btnVerify.setFont(new Font("Segoe UI", Font.BOLD, 15));
-        btnVerify.setBorderPainted(false);
-        btnVerify.setFocusPainted(false);
-        btnVerify.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        btnVerify.addActionListener(e -> verifyCode());
-        usernameField.addActionListener(e -> verifyCode());
-        codeField.addActionListener(e -> usernameField.requestFocusInWindow());
+        root.getChildren().addAll(title, sub, codeField, usernameField, btnVerify, statusLabel);
 
-        statusLabel = new JLabel(" ");
-        statusLabel.setForeground(Color.RED);
-        statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        statusLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-        main.add(title);
-        main.add(Box.createVerticalStrut(5));
-        main.add(sub);
-        main.add(Box.createVerticalStrut(20));
-        main.add(lblCode);
-        main.add(Box.createVerticalStrut(5));
-        main.add(codeField);
-        main.add(Box.createVerticalStrut(15));
-        main.add(lblUser);
-        main.add(Box.createVerticalStrut(5));
-        main.add(usernameField);
-        main.add(Box.createVerticalStrut(15));
-        main.add(btnVerify);
-        main.add(Box.createVerticalStrut(10));
-        main.add(statusLabel);
-
-        frame.setContentPane(main);
-        frame.setVisible(true);
-        codeField.requestFocusInWindow();
+        Scene scene = new Scene(root, 400, 340);
+        stage.setTitle("Vérification du code");
+        stage.setScene(scene);
+        stage.setResizable(false);
+        stage.show();
     }
 
-    private void verifyCode() {
-        String code     = codeField.getText().trim();
-        String username = usernameField.getText().trim();
+    private void verifyCode(String codeText, String userText, Button btnVerify, Label statusLabel, Stage stage) {
+        String code = codeText.trim();
+        String username = userText.trim();
 
         if (code.isEmpty()) {
             statusLabel.setText("Veuillez entrer le code SMS.");
@@ -128,33 +87,28 @@ public class CodeView {
             return;
         }
 
-        btnVerify.setEnabled(false);
+        btnVerify.setDisable(true);
         btnVerify.setText("Vérification...");
         statusLabel.setText(" ");
 
         auth.verifyCode(phone, code, username, new AuthService.AuthCallback() {
-
             @Override
-            public void onSuccess(int userId, String phone,
-                                  String username, boolean isNewUser) {
-                // Mettre à jour le phone dans SocketManager
-                SocketManager.getInstance().setUserPhone(phone);
+            public void onSuccess(int userId, String phoneResult, String usernameResult, boolean isNewUser) {
+                SocketManager.getInstance().setUserPhone(phoneResult);
                 SocketManager.getInstance().setUserId(userId);
 
-                SwingUtilities.invokeLater(() -> {
-                    frame.dispose();
-                    new ChatView(userId, phone, username, network).show();
+                Platform.runLater(() -> {
+                    stage.close();
+                    new ChatView(userId, phoneResult, usernameResult, network).start(new Stage());
                 });
             }
 
             @Override
             public void onError(String reason) {
-                SwingUtilities.invokeLater(() -> {
+                Platform.runLater(() -> {
                     statusLabel.setText("Code invalide : " + reason);
-                    btnVerify.setEnabled(true);
+                    btnVerify.setDisable(false);
                     btnVerify.setText("Vérifier");
-                    codeField.selectAll();
-                    codeField.requestFocusInWindow();
                 });
             }
         });

@@ -1,87 +1,118 @@
 package service;
 
 import dao.MessageDao;
+import dao.UserDao;
 import model.Message;
 import server.ChatServer;
 import server.ClientHandler;
 
-import java.nio.charset.StandardCharsets;
+import java.io.IOException;
 import java.util.List;
 
+/**
+ * MessageService — Traitement et livraison des messages.
+ */
 public class MessageService {
 
-    private final MessageDao dao = new MessageDao();
+    private final MessageDao messageDao = new MessageDao();
+    private final UserDao    userDao    = new UserDao();
 
     /**
-     * Traite un message entrant.
-     *
-     * ORDRE :
-     *   1. Sauvegarder en base NOT_DELIVERED (toujours)
-     *   2. Chercher le destinataire par receiverId dans clients
-     *   3. Si online → send() → updateEtat(DELIVERED)
-     *   4. Si offline → reste NOT_DELIVERED, livré à la reconnexion
+     * Traite un message entrant :
+     * 1. Sauvegarde en DB
+     * 2. Livraison si destinataire connecté → DELIVERED
+     * 3. Sinon reste NOT_DELIVERED → livré plus tard
      */
-    public void process(Message m, byte[] data) {
-
-        // ÉTAPE 1 : sauvegarder en base
-        int messageId = dao.save(m, m.isBinary() ? data : null);
-        if (messageId == -1) {
-            System.err.println("[MessageService] Échec sauvegarde id="
-                    + m.getSenderId() + "→" + m.getReceiverId());
-            return;
+    public void process(Message m, String receiverPhone, byte[] data) {
+        // Sauvegarde en DB
+        int msgId = messageDao.save(m, data);
+        boolean persisted = msgId != -1;
+        if (!persisted) {
+            System.err.println("[MessageService] Erreur : Impossible de sauvegarder le message en base de données (vérifiez la taille du fichier et le type de colonne data, e.g. LONGBLOB).");
+            System.err.println("[MessageService] Tentative de livraison temps réel...");
         }
 
-        // ÉTAPE 2 : chercher le destinataire par son ID (toujours unique)
-        ClientHandler receiverHandler =
-                ChatServer.clients.get(m.getReceiverId());
 
-        if (receiverHandler != null) {
+        // Livraison si connecté
+        ClientHandler receiver = ChatServer.clients.get(m.getReceiverId());
+        if (receiver == null && receiverPhone != null && !receiverPhone.isBlank()) {
+            receiver = findOnlineByPhone(receiverPhone);
+        }
+        if (receiver != null) {
             try {
-                // Envoyer : le senderPhone sert d'identifiant affiché
-                receiverHandler.send(
-                        m.getType(),
+                byte[] toSend = m.isText()
+                        ? m.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                        : data;
+                receiver.send(m.getType(),
                         m.getSenderPhone(),
-                        m.getFilename(),
-                        data
-                );
-                // ÉTAPE 3 : confirmer la livraison
-                dao.updateEtat(messageId, "DELIVERED");
-                System.out.println("[MessageService] Livré id=" + messageId);
-
-            } catch (Exception e) {
-                // send() échoué → reste NOT_DELIVERED
-                System.err.println("[MessageService] Échec livraison id="
-                        + messageId + " : " + e.getMessage());
+                        m.getFilename() != null ? m.getFilename() : "",
+                        toSend);
+                if (persisted) {
+                    messageDao.updateEtat(msgId, "DELIVERED");
+                }
+                System.out.println("[MessageService] Message livré à id="
+                        + m.getReceiverId());
+            } catch (IOException e) {
+                System.err.println("[MessageService] Erreur livraison : "
+                        + e.getMessage());
             }
         } else {
-            // Destinataire offline → NOT_DELIVERED déjà en base
-            System.out.println("[MessageService] Destinataire offline, "
-                    + "message id=" + messageId + " en attente.");
+            if (persisted) {
+                System.out.println("[MessageService] Destinataire hors ligne, "
+                        + "message sauvegardé (id=" + msgId + ")");
+            } else {
+                System.err.println("[MessageService] Destinataire hors ligne et sauvegarde échouée, message perdu.");
+            }
         }
     }
 
     /**
-     * Livre les messages offline à la reconnexion.
-     * Cherche par receiverId (INT) → pas de conflit entre deux Sara.
+     * Livre tous les messages non délivrés lors de la reconnexion.
      */
     public void deliverOfflineMessages(int userId, String userPhone,
                                        ClientHandler handler) {
-        List<Message> list = dao.getUndelivered(userId);
-        for (Message m : list) {
+        List<Message> pending = messageDao.getUndelivered(userId);
+        if (pending.isEmpty()) return;
+
+        System.out.println("[MessageService] Livraison de "
+                + pending.size() + " message(s) hors-ligne à " + userPhone);
+
+        for (Message m : pending) {
             try {
                 byte[] data;
                 if (m.isText()) {
-                    data = m.getContent().getBytes(StandardCharsets.UTF_8);
+                    data = m.getContent().getBytes(
+                            java.nio.charset.StandardCharsets.UTF_8);
                 } else {
-                    data = dao.getDataById(m.getId());
+                    data = messageDao.getDataById(m.getId());
                 }
                 handler.send(m.getType(), m.getSenderPhone(),
-                        m.getFilename(), data);
-                dao.updateEtat(m.getId(), "DELIVERED");
-            } catch (Exception e) {
-                System.err.println("[MessageService] Échec offline id="
-                        + m.getId() + ": " + e.getMessage());
+                        m.getFilename() != null ? m.getFilename() : "", data);
+                messageDao.updateEtat(m.getId(), "DELIVERED");
+            } catch (IOException e) {
+                System.err.println("[MessageService] Erreur livraison offline : "
+                        + e.getMessage());
             }
         }
+    }
+
+    private ClientHandler findOnlineByPhone(String phone) {
+        String target = normalizePhone(phone);
+        for (ClientHandler handler : ChatServer.clients.values()) {
+            String connectedPhone = normalizePhone(handler.getUserPhone());
+            if (!connectedPhone.isEmpty() && connectedPhone.equals(target)) {
+                return handler;
+            }
+        }
+        return null;
+    }
+
+    private String normalizePhone(String input) {
+        if (input == null) return "";
+        String normalized = input.replaceAll("[\\s\\-()]", "");
+        if (normalized.startsWith("00")) {
+            normalized = "+" + normalized.substring(2);
+        }
+        return normalized.trim();
     }
 }

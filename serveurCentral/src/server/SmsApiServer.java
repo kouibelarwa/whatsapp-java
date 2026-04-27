@@ -58,11 +58,12 @@ public class SmsApiServer {
                 + " → http://localhost:8080/code?phone=" + phone);
     }
 
-    /**
-     * Supprime le code après vérification réussie.
-     */
     public static void removeCode(String phone) {
         codes.remove(phone);
+    }
+
+    public static String getCode(String phone) {
+        return codes.get(phone);
     }
 
     private static String extractPhone(String query) {
