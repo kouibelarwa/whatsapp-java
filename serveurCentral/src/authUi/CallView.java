@@ -44,7 +44,7 @@ public class CallView {
     private Webcam webcam;
     private Thread videoThread;
     private Thread audioThread;
-    
+
     private TargetDataLine audioInput;
     private SourceDataLine audioOutput;
 
@@ -157,7 +157,7 @@ public class CallView {
 
     private void activateHardware(boolean startSending) {
         isHardwareActive = true;
-        
+
         // Audio
         try {
             AudioFormat format = new AudioFormat(16000, 16, 1, true, true);
@@ -168,7 +168,7 @@ public class CallView {
                 audioInput = (TargetDataLine) AudioSystem.getLine(targetInfo);
                 audioInput.open(format);
                 audioInput.start();
-                
+
                 audioThread = new Thread(() -> {
                     byte[] buffer = new byte[1024];
                     while (isHardwareActive) {
@@ -242,7 +242,7 @@ public class CallView {
         boolean wasActive = isCallActive;
         isCallActive = false;
         isHardwareActive = false;
-        
+
         if (webcam != null && webcam.isOpen()) {
             webcam.close();
         }
