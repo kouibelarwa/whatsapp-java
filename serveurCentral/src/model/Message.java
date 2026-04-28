@@ -72,7 +72,7 @@ public class Message {
     // ── Helpers ──────────────────────────────────────────────────
     public boolean isText()   { return "text".equals(type); }
     public boolean isBinary() {
-        return "audio".equals(type) || "video".equals(type) || "file".equals(type);
+        return "audio".equals(type) || "video".equals(type) || "file".equals(type) || "image".equals(type);
     }
 
     // ── Getters / setters ─────────────────────────────────────────
