@@ -8,7 +8,6 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Petit serveur HTTP interne qui simule une API SMS.
  * Accessible sur http://localhost:8080/code?phone=0612345678
- * Aucune dépendance externe, utilise com.sun.net.httpserver
  * inclus dans le JDK standard.
  */
 public class SmsApiServer {

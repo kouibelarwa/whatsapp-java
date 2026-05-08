@@ -7,10 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class ChatServer {
 
-    /**
-     * Map userId (INT) → ClientHandler.
-     * Clé = ID entier unique, pas username (qui peut se répéter).
-     */
+
     public static final ConcurrentHashMap<Integer, ClientHandler> clients =
             new ConcurrentHashMap<>();
 

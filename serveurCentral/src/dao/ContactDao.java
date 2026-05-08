@@ -6,18 +6,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * ContactDao — opérations contacts côté serveur.
- *
- * La table contacts utilise owner_id et contact_id (IDs de users).
- * On retourne des objets User avec phone + username pour que
- * l'interface puisse afficher le nom et le statut.
+  ContactDao — opérations contacts côté serveur.
+
+ La table contacts utilise owner_id et contact_id (IDs de users).
+  On retourne des objets User avec phone + username pour que
+  l'interface puisse afficher le nom et le statut.
  */
 public class ContactDao {
 
     /**
-     * Ajoute un contact.
-     * owner_id  = celui qui ajoute
-     * contact_id = celui qui est ajouté
+      Ajoute un contact.
+      owner_id  = celui qui ajoute
+      contact_id = celui qui est ajouté
      */
     public boolean addContact(int ownerId, int contactId, String nickname) {
         String sql = "INSERT INTO contacts(owner_id, contact_id, nickname) "

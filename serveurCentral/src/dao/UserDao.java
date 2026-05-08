@@ -7,10 +7,9 @@ import java.util.List;
 
 public class UserDao {
 
-    /**
-     * Finds the exact phone string stored in the database to avoid duplicate accounts 
-     * due to formatting differences (e.g. 06 vs +336).
-     */
+
+
+
     public String getExactPhoneFromDB(String phone) {
         User u = searchByPhone(phone);
         return (u != null) ? u.getPhone() : phone;
