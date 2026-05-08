@@ -45,6 +45,17 @@ public class UserDao {
             try {
                 stmt.execute("ALTER TABLE group_members ADD COLUMN is_admin BOOLEAN DEFAULT FALSE");
             } catch (Exception e) {} // Ignorer si la colonne existe déjà
+            try {
+                stmt.execute("SET GLOBAL max_allowed_packet=52428800");
+            } catch (Exception e) {
+                System.out.println("[UserDao] Info: Impossible de modifier max_allowed_packet, nécessite les droits SUPER. " + e.getMessage());
+            }
+            try {
+                stmt.execute("ALTER TABLE messages MODIFY COLUMN data LONGBLOB");
+            } catch (Exception e) {}
+            try {
+                stmt.execute("ALTER TABLE group_messages MODIFY COLUMN data LONGBLOB");
+            } catch (Exception e) {}
         } catch (Exception e) {
             System.err.println("[UserDao] Erreur initialisation des tables de groupe: " + e.getMessage());
         }

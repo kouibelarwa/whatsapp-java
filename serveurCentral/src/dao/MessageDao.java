@@ -205,6 +205,9 @@ public class MessageDao {
                 return rs.getInt(1);
             }
         } catch (Exception e) {
+            System.err.println("[MessageDao] Erreur critique lors de l'insertion du message de groupe.");
+            System.err.println("[MessageDao] Cause probable : Taille de la vidéo trop grande pour MySQL (Vérifiez max_allowed_packet dans my.ini).");
+            System.err.println("[MessageDao] Détail : " + e.getMessage());
             e.printStackTrace();
         }
         return -1;

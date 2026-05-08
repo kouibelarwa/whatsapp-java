@@ -188,8 +188,7 @@ public class MessageService {
     public void processGroupMessage(Message m, int groupId, byte[] data) {
         int msgId = messageDao.saveGroupMessage(m, groupId, data);
         if (msgId == -1) {
-            System.err.println("[MessageService] Erreur sauvegarde message groupe " + groupId);
-            return;
+            System.err.println("[MessageService] Erreur sauvegarde message groupe " + groupId + ". Tentative de livraison temps réel...");
         }
 
         List<Integer> members = userDao.getGroupMembers(groupId);
