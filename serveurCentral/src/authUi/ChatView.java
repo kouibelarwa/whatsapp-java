@@ -230,9 +230,8 @@ public class ChatView {
                                             activeConversation = null;
                                             showWelcomeScreen();
                                         });
-                                        // On cache les appels pour les groupes pour l'instant (Livrable 2)
-                                        c.setOnAudioCall(() -> showToast("Appels de groupe non supportés"));
-                                        c.setOnVideoCall(() -> showToast("Appels de groupe non supportés"));
+                                        c.setOnAudioCall(() -> startOutgoingCall(normalizedSender, "Groupe " + groupIdStr.replace("GROUP_", ""), "audio"));
+                                        c.setOnVideoCall(() -> startOutgoingCall(normalizedSender, "Groupe " + groupIdStr.replace("GROUP_", ""), "video"));
                                         return c;
                                     });
                                 } else {

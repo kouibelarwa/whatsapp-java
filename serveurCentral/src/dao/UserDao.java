@@ -172,6 +172,28 @@ public class UserDao {
         return null;
     }
 
+    public User getByUsername(String username) {
+        String sql = "SELECT * FROM users WHERE username = ?";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, username);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                return new User(
+                        rs.getInt("id"),
+                        rs.getString("phone"),
+                        rs.getString("username"),
+                        rs.getString("verification_code"),
+                        rs.getBoolean("verified"),
+                        rs.getString("status")
+                );
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
     public User searchByPhone(String phone) {
         User exact = getByPhone(phone);
         if (exact != null) return exact;

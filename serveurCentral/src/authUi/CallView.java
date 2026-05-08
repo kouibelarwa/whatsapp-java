@@ -62,7 +62,8 @@ public class CallView {
 
     public void start(Stage stage) {
         this.stage = stage;
-        stage.initStyle(StageStyle.TRANSPARENT);
+        stage.setTitle("Appel - " + contactName);
+        stage.setOnCloseRequest(e -> endCall());
 
         VBox root = new VBox(20);
         root.setAlignment(Pos.CENTER);
@@ -125,7 +126,6 @@ public class CallView {
         }
 
         Scene scene = new Scene(root, 440, "video".equals(callType) ? 550 : 300);
-        scene.setFill(Color.TRANSPARENT);
         stage.setScene(scene);
         stage.show();
     }

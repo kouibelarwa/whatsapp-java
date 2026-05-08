@@ -140,6 +140,14 @@ public class MessageService {
                 }
             }
             if (!found) {
+                model.User u = userDao.getByUsername(cleanName);
+                if (u == null) u = userDao.searchByPhone(cleanName);
+                if (u != null) {
+                    memberIds.add(u.getId());
+                    found = true;
+                }
+            }
+            if (!found) {
                 try {
                     client.send("GROUP_SIGNAL", "", "", ("GROUP_ERROR:Contact introuvable (" + cleanName + ")").getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 } catch (Exception e) {}
@@ -244,6 +252,14 @@ public class MessageService {
             if (cleanName.equalsIgnoreCase(c[4]) || cleanName.equalsIgnoreCase(c[2])) {
                 targetId = Integer.parseInt(c[0]);
                 break;
+            }
+        }
+        
+        if (targetId == -1) {
+            model.User u = userDao.getByUsername(cleanName);
+            if (u == null) u = userDao.searchByPhone(cleanName);
+            if (u != null) {
+                targetId = u.getId();
             }
         }
         

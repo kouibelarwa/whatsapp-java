@@ -287,6 +287,25 @@ public class ClientHandler extends Thread {
                     otherPhone = parts[parts.length - 1];
                 }
 
+                if (otherPhone.startsWith("GROUP_")) {
+                    int groupId = Integer.parseInt(otherPhone.replace("GROUP_", ""));
+                    java.util.List<Integer> members = userDao.getGroupMembers(groupId);
+                    for (int memberId : members) {
+                        if (memberId == userId) continue;
+                        ClientHandler receiver = ChatServer.clients.get(memberId);
+                        if (receiver != null) {
+                            try {
+                                if (signal.equals("CALL_REQUEST")) {
+                                    receiver.send("CALL_SIGNAL", otherPhone, "", ("CALL_INCOMING:" + callType + ":" + otherPhone).getBytes(StandardCharsets.UTF_8));
+                                } else {
+                                    receiver.send("CALL_SIGNAL", otherPhone, "", (signal + ":" + otherPhone).getBytes(StandardCharsets.UTF_8));
+                                }
+                            } catch (Exception e) {}
+                        }
+                    }
+                    break;
+                }
+
                 switch (signal) {
                     case "CALL_REQUEST":
                         callService.handleRequest(userId, userPhone, otherPhone, callType);
@@ -308,19 +327,33 @@ public class ClientHandler extends Thread {
 
             case "CALL_AUDIO":
             case "CALL_VIDEO": {
-                User receiverUser = userDao.searchByPhone(receiverPhone);
-                if (receiverUser == null) {
-                    return;
-                }
-                int receiverId = receiverUser.getId();
-                ClientHandler receiver = ChatServer.clients.get(receiverId);
-                if (receiver == null) {
-                    return;
-                }
-                try {
-                    receiver.send(type, userPhone, filename, data);
-                } catch (IOException e) {
-                    System.err.println("[Call] Erreur relay " + type + " : " + e.getMessage());
+                if (receiverPhone.startsWith("GROUP_")) {
+                    int groupId = Integer.parseInt(receiverPhone.replace("GROUP_", ""));
+                    java.util.List<Integer> members = userDao.getGroupMembers(groupId);
+                    for (int memberId : members) {
+                        if (memberId == userId) continue;
+                        ClientHandler receiver = ChatServer.clients.get(memberId);
+                        if (receiver != null) {
+                            try {
+                                receiver.send(type, receiverPhone, filename, data);
+                            } catch (IOException e) {}
+                        }
+                    }
+                } else {
+                    User receiverUser = userDao.searchByPhone(receiverPhone);
+                    if (receiverUser == null) {
+                        return;
+                    }
+                    int receiverId = receiverUser.getId();
+                    ClientHandler receiver = ChatServer.clients.get(receiverId);
+                    if (receiver == null) {
+                        return;
+                    }
+                    try {
+                        receiver.send(type, userPhone, filename, data);
+                    } catch (IOException e) {
+                        System.err.println("[Call] Erreur relay " + type + " : " + e.getMessage());
+                    }
                 }
                 break;
             }

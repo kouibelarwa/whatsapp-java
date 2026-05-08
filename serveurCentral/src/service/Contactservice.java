@@ -52,6 +52,7 @@ public class Contactservice {
             User target = userDao.searchByPhone(targetPhone);
             if (target != null) {
                 contactDao.removeContact(userId, target.getId());
+                messageDao.deleteConversation(userId, target.getId());
             }
             handleGet(userId, handler);
         }

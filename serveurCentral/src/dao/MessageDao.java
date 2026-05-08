@@ -93,6 +93,23 @@ public class MessageDao {
     }
 
     /**
+     * Supprime la conversation complète entre deux utilisateurs.
+     */
+    public void deleteConversation(int userId1, int userId2) {
+        String sql = "DELETE FROM messages "
+                + "WHERE (sender_id = ? AND receiver_id = ?) "
+                + "   OR (sender_id = ? AND receiver_id = ?)";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, userId1);
+            ps.setInt(2, userId2);
+            ps.setInt(3, userId2);
+            ps.setInt(4, userId1);
+            ps.executeUpdate();
+        } catch (Exception e) { e.printStackTrace(); }
+    }
+
+    /**
      * Récupère les messages non délivrés pour un receiver_id.
      */
     public List<Message> getUndelivered(int receiverId) {

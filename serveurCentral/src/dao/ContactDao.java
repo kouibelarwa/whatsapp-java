@@ -14,6 +14,20 @@ import java.util.List;
  */
 public class ContactDao {
 
+    public static void initContactTable() {
+        String sql = "CREATE TABLE IF NOT EXISTS contacts ("
+                   + "owner_id INT NOT NULL, "
+                   + "contact_id INT NOT NULL, "
+                   + "nickname VARCHAR(255), "
+                   + "PRIMARY KEY (owner_id, contact_id))";
+        try (Connection conn = DBConnection.getConnection();
+             Statement stmt = conn.createStatement()) {
+            stmt.execute(sql);
+        } catch (Exception e) {
+            System.err.println("[ContactDao] Erreur création table contacts: " + e.getMessage());
+        }
+    }
+
     /**
       Ajoute un contact.
       owner_id  = celui qui ajoute
