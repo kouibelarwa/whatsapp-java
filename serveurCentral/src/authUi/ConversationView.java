@@ -68,10 +68,17 @@ public class ConversationView {
         this.contactPhone = contactPhone;
         this.contactName = contactName != null ? contactName : contactPhone;
         this.contactStatus = contactStatus != null ? contactStatus : "OFFLINE";
-        this.contactId = userDao.getIdByPhone(contactPhone);
+        
+        if (contactPhone != null && contactPhone.startsWith("GROUP_")) {
+            this.contactId = Integer.parseInt(contactPhone.replace("GROUP_", ""));
+        } else {
+            this.contactId = userDao.getIdByPhone(contactPhone);
+        }
 
         buildUI();
-        if (contactId != -1) messageDao.markAllAsRead(contactId, myUserId);
+        if (contactId != -1 && !contactPhone.startsWith("GROUP_")) {
+            messageDao.markAllAsRead(contactId, myUserId);
+        }
         loadHistory();
     }
 
@@ -112,7 +119,16 @@ public class ConversationView {
         nameLbl.setStyle("-fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 15px;");
         statusLabel = new Label("● " + ("ONLINE".equals(contactStatus) ? "En ligne" : "Hors ligne"));
         statusLabel.setStyle("-fx-text-fill: " + ("ONLINE".equals(contactStatus) ? "#25D366" : "#787878") + "; -fx-font-size: 11px;");
-        info.getChildren().addAll(nameLbl);
+        info.getChildren().addAll(nameLbl, statusLabel);
+
+        HBox clickableHeader = new HBox(10, avatar, info);
+        clickableHeader.setAlignment(Pos.CENTER_LEFT);
+        clickableHeader.setStyle("-fx-cursor: hand;");
+        clickableHeader.setOnMouseClicked(e -> {
+            if (contactPhone != null && contactPhone.startsWith("GROUP_")) {
+                SocketManager.getInstance().sendBinary("GROUP_SIGNAL", "", "", ("GET_GROUP_INFO:" + contactId).getBytes(StandardCharsets.UTF_8));
+            }
+        });
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
@@ -125,7 +141,7 @@ public class ConversationView {
         btnVideoCall.setStyle("-fx-background-color: transparent; -fx-text-fill: white; -fx-font-size: 18px; -fx-cursor: hand;");
         btnVideoCall.setOnAction(e -> { if (onVideoCall != null) onVideoCall.run(); });
 
-        header.getChildren().addAll(btnBack, avatar, info, spacer, btnAudioCall, btnVideoCall);
+        header.getChildren().addAll(btnBack, clickableHeader, spacer, btnAudioCall, btnVideoCall);
         view.setTop(header);
 
         // Messages
@@ -182,15 +198,31 @@ public class ConversationView {
 
     private void loadHistory() {
         if (contactId == -1) return;
-        List<Message> history = messageDao.getConversation(myUserId, contactId);
+        List<Message> history;
+        if (contactPhone != null && contactPhone.startsWith("GROUP_")) {
+            history = messageDao.getGroupHistory(contactId);
+        } else {
+            history = messageDao.getConversation(myUserId, contactId);
+        }
+
         for (Message m : history) {
             boolean mine = m.getSenderId() == myUserId;
             String timeStr = formatTime(m.getSentAt());
             String etat = m.getEtat();
+            String senderPrefix = "";
+            if (!mine && contactPhone != null && contactPhone.startsWith("GROUP_")) {
+                senderPrefix = "~ " + m.getSenderPhone() + "\n";
+            }
+
             if (m.isText()) {
-                addMessageBubble(m.getContent(), mine, timeStr, etat);
+                addMessageBubble(senderPrefix + m.getContent(), mine, timeStr, etat);
             } else if ("audio".equals(m.getType())) {
-                byte[] data = messageDao.getDataById(m.getId());
+                byte[] data;
+                if (contactPhone != null && contactPhone.startsWith("GROUP_")) {
+                    data = messageDao.getGroupMessageData(m.getId());
+                } else {
+                    data = messageDao.getDataById(m.getId());
+                }
                 try {
                     File tempFile = File.createTempFile("history_audio_", ".wav");
                     Files.write(tempFile.toPath(), data);
@@ -201,7 +233,12 @@ public class ConversationView {
             } else {
                 String filename = m.getFilename() != null ? m.getFilename() : "fichier";
                 try {
-                    byte[] binaryData = messageDao.getDataById(m.getId());
+                    byte[] binaryData;
+                    if (contactPhone != null && contactPhone.startsWith("GROUP_")) {
+                        binaryData = messageDao.getGroupMessageData(m.getId());
+                    } else {
+                        binaryData = messageDao.getDataById(m.getId());
+                    }
                     File tempFile = File.createTempFile("history_file_", "_" + filename.replaceAll("[^a-zA-Z0-9._-]", "_"));
                     Files.write(tempFile.toPath(), binaryData);
                     addFileBubble(tempFile, filename, m.getType(), mine, timeStr, etat);
@@ -221,8 +258,9 @@ public class ConversationView {
             addMessageBubble(text, true, formatTime(null), "NOT_DELIVERED");
             scrollToBottom();
             sentSomething = true;
+            String msgType = (contactPhone != null && contactPhone.startsWith("GROUP_")) ? "GROUP_MSG:text" : "text";
             new Thread(() -> SocketManager.getInstance().sendBinary(
-                    "text", contactPhone, "", text.getBytes(StandardCharsets.UTF_8))
+                    msgType, contactPhone.replace("GROUP_", ""), "", text.getBytes(StandardCharsets.UTF_8))
             ).start();
         }
 
@@ -239,8 +277,9 @@ public class ConversationView {
                 addFileBubble(fileToSend, filename, typeToSend, true, formatTime(null), "NOT_DELIVERED");
                 scrollToBottom();
                 sentSomething = true;
+                String msgType = (contactPhone != null && contactPhone.startsWith("GROUP_")) ? ("GROUP_MSG:" + typeToSend) : typeToSend;
                 new Thread(() -> SocketManager.getInstance().sendBinary(
-                        typeToSend, contactPhone, filename, data)
+                        msgType, contactPhone.replace("GROUP_", ""), filename, data)
                 ).start();
             } catch (Exception e) {
                 Alert alert = new Alert(Alert.AlertType.ERROR, "Erreur lors de l'envoi du fichier : " + e.getMessage());
@@ -357,8 +396,9 @@ public class ConversationView {
                     scrollToBottom();
                 });
                 
+                String msgType = (contactPhone != null && contactPhone.startsWith("GROUP_")) ? "GROUP_MSG:audio" : "audio";
                 new Thread(() -> SocketManager.getInstance().sendBinary(
-                        "audio", contactPhone, filename, data)
+                        msgType, contactPhone.replace("GROUP_", ""), filename, data)
                 ).start();
             }
         } catch (Exception ex) {
@@ -366,11 +406,17 @@ public class ConversationView {
         }
     }
 
-    public void receiveMessage(String type, String filename, byte[] data) {
+    public void receiveMessage(String type, String filename, byte[] data, String senderPhoneForUi) {
         Platform.runLater(() -> {
             String timeStr = formatTime(null);
+            
+            String senderPrefix = "";
+            if (senderPhoneForUi != null && contactPhone != null && contactPhone.startsWith("GROUP_") && !senderPhoneForUi.equals(myPhone)) {
+                senderPrefix = "~ " + senderPhoneForUi + "\n";
+            }
+
             if ("text".equals(type)) {
-                addMessageBubble(new String(data, StandardCharsets.UTF_8), false, timeStr, "READ");
+                addMessageBubble(senderPrefix + new String(data, StandardCharsets.UTF_8), false, timeStr, "READ");
             } else if ("audio".equals(type)) {
                 try {
                     File tempFile = File.createTempFile("received_audio_", ".wav");
@@ -573,5 +619,131 @@ public class ConversationView {
 
     private void scrollToBottom() {
         Platform.runLater(() -> scrollPane.setVvalue(1.0));
+    }
+
+    public int getContactId() {
+        return contactId;
+    }
+
+    private Dialog<Void> currentGroupDialog;
+
+    public void showGroupInfoDialog(String payload) {
+        Platform.runLater(() -> {
+            if (currentGroupDialog != null && currentGroupDialog.isShowing()) {
+                currentGroupDialog.close();
+            }
+
+            // payload format: GROUP_INFO_REPLY:groupId|id:phone:username:isAdmin:isOnline;id:phone...
+            String dataPart = payload.substring(payload.indexOf("|") + 1);
+            String[] members = dataPart.split(";");
+
+            boolean amIAdmin = false;
+            for (String m : members) {
+                if (m.isEmpty()) continue;
+                String[] parts = m.split(":");
+                if (Integer.parseInt(parts[0]) == myUserId) {
+                    amIAdmin = Boolean.parseBoolean(parts[3]);
+                    break;
+                }
+            }
+
+            Dialog<Void> dialog = new Dialog<>();
+            dialog.setTitle("Infos du Groupe - " + contactName);
+            dialog.setHeaderText("Membres du groupe");
+            
+            VBox list = new VBox(10);
+            list.setPadding(new Insets(10));
+            list.setStyle("-fx-background-color: #121212;");
+
+            for (String m : members) {
+                if (m.isEmpty()) continue;
+                String[] parts = m.split(":");
+                int mId = Integer.parseInt(parts[0]);
+                String mPhone = parts[1];
+                String mName = parts[2];
+                boolean isAdmin = Boolean.parseBoolean(parts[3]);
+                String onlineStatus = parts[4];
+
+                HBox row = new HBox(10);
+                row.setAlignment(Pos.CENTER_LEFT);
+                row.setPadding(new Insets(5));
+                row.setStyle("-fx-border-color: #282828; -fx-border-width: 0 0 1 0;");
+
+                VBox details = new VBox(2);
+                String displayName = (mId == myUserId) ? "Vous" : mName;
+                Label nameLbl = new Label(displayName + (isAdmin ? " (Admin)" : ""));
+                nameLbl.setStyle("-fx-text-fill: white; -fx-font-weight: bold;");
+                Label statLbl = new Label("ONLINE".equals(onlineStatus) ? "En ligne" : "Hors ligne");
+                statLbl.setStyle("-fx-text-fill: " + ("ONLINE".equals(onlineStatus) ? "#25D366" : "gray") + "; -fx-font-size: 11px;");
+                details.getChildren().addAll(nameLbl, statLbl);
+
+                Region spacer = new Region();
+                HBox.setHgrow(spacer, Priority.ALWAYS);
+
+                row.getChildren().addAll(ChatView.buildAvatar(mName, 36), details, spacer);
+
+                if (amIAdmin && mId != myUserId) {
+                    Button btnRemove = new Button("Retirer");
+                    btnRemove.setStyle("-fx-background-color: transparent; -fx-text-fill: #dc3c3c;");
+                    btnRemove.setOnAction(e -> {
+                        SocketManager.getInstance().sendBinary("GROUP_SIGNAL", "", "", ("REMOVE_GROUP_MEMBER:" + contactId + ":" + mId).getBytes(StandardCharsets.UTF_8));
+                    });
+                    row.getChildren().add(btnRemove);
+
+                    if (!isAdmin) {
+                        Button btnPromote = new Button("Promouvoir");
+                        btnPromote.setStyle("-fx-background-color: transparent; -fx-text-fill: #25D366;");
+                        btnPromote.setOnAction(e -> {
+                            SocketManager.getInstance().sendBinary("GROUP_SIGNAL", "", "", ("PROMOTE_ADMIN:" + contactId + ":" + mId).getBytes(StandardCharsets.UTF_8));
+                        });
+                        row.getChildren().add(btnPromote);
+                    }
+                }
+                list.getChildren().add(row);
+            }
+
+            VBox layout = new VBox(15, list);
+            
+            if (amIAdmin) {
+                Button btnAdd = new Button("+ Ajouter un membre");
+                btnAdd.setStyle("-fx-background-color: #25D366; -fx-text-fill: white; -fx-font-weight: bold;");
+                btnAdd.setOnAction(e -> {
+                    TextInputDialog d = new TextInputDialog();
+                    d.setTitle("Ajouter un membre");
+                    d.setHeaderText("Nom du contact à ajouter :");
+                    java.util.Optional<String> res = d.showAndWait();
+                    if (res.isPresent() && !res.get().trim().isEmpty()) {
+                        SocketManager.getInstance().sendBinary("GROUP_SIGNAL", "", "", ("ADD_GROUP_MEMBER:" + contactId + ":" + res.get().trim()).getBytes(StandardCharsets.UTF_8));
+                    }
+                });
+                layout.getChildren().add(0, btnAdd); // au dessus
+            }
+
+            Button btnLeave = new Button("🚪 Quitter le groupe");
+            btnLeave.setStyle("-fx-background-color: transparent; -fx-text-fill: #dc3c3c; -fx-border-color: #dc3c3c; -fx-border-radius: 5;");
+            btnLeave.setOnAction(e -> {
+                Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, "Voulez-vous vraiment quitter ce groupe ?");
+                confirm.showAndWait().ifPresent(response -> {
+                    if (response == ButtonType.OK) {
+                        dialog.close();
+                        if (onBack != null) onBack.run();
+                        SocketManager.getInstance().sendBinary("GROUP_SIGNAL", "", "", ("LEAVE_GROUP:" + contactId).getBytes(StandardCharsets.UTF_8));
+                    }
+                });
+            });
+            layout.getChildren().add(btnLeave);
+
+            ScrollPane scrollPane = new ScrollPane(layout);
+            scrollPane.setStyle("-fx-background: #121212; -fx-border-color: transparent;");
+            scrollPane.setFitToWidth(true);
+            scrollPane.setPrefViewportHeight(400);
+
+            dialog.getDialogPane().setContent(scrollPane);
+            dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+            dialog.getDialogPane().setStyle("-fx-background-color: #121212;");
+
+            currentGroupDialog = dialog;
+            dialog.show();
+        });
     }
 }

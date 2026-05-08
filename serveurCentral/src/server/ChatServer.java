@@ -7,10 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class ChatServer {
 
-    /**
-     * Map userId (INT) → ClientHandler.
-     * Clé = ID entier unique, pas username (qui peut se répéter).
-     */
+
     public static final ConcurrentHashMap<Integer, ClientHandler> clients =
             new ConcurrentHashMap<>();
 
@@ -19,6 +16,9 @@ public class ChatServer {
 
     public static void main(String[] args) throws Exception {
         SmsApiServer.start();
+        System.out.println("[ChatServer] Initialisation des tables de groupe...");
+        dao.UserDao.initGroupTables();
+        
         ServerSocket serverSocket = new ServerSocket(5000);
         System.out.println("[ChatServer] Démarré sur le port 5000");
 

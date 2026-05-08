@@ -160,4 +160,110 @@ public class MessageDao {
             ps.executeUpdate();
         } catch (Exception e) { e.printStackTrace(); }
     }
+
+    // --- Group Messages Operations ---
+
+    public int saveGroupMessage(Message m, int groupId, byte[] data) {
+        String sql = "INSERT INTO group_messages (group_id, sender_id, type, filename, content, data, sent_at) " +
+                     "VALUES (?, ?, ?, ?, ?, ?, ?)";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setInt(1, groupId);
+            ps.setInt(2, m.getSenderId());
+            ps.setString(3, m.getType());
+            ps.setString(4, m.getFilename());
+            
+            if (m.isText()) {
+                ps.setString(5, m.getContent());
+                ps.setNull(6, Types.BLOB);
+            } else {
+                ps.setNull(5, Types.VARCHAR);
+                ps.setBytes(6, data);
+            }
+            ps.setTimestamp(7, m.getSentAt() != null ? m.getSentAt() : new java.sql.Timestamp(System.currentTimeMillis()));
+            
+            ps.executeUpdate();
+            ResultSet rs = ps.getGeneratedKeys();
+            if (rs.next()) {
+                return rs.getInt(1);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return -1;
+    }
+
+    public List<Message> getGroupHistory(int groupId) {
+        List<Message> list = new ArrayList<>();
+        String sql = "SELECT gm.id, gm.sender_id, u.phone AS sender_phone, gm.type, gm.filename, gm.content, gm.sent_at " +
+                     "FROM group_messages gm JOIN users u ON gm.sender_id = u.id " +
+                     "WHERE gm.group_id = ? ORDER BY gm.sent_at ASC";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, groupId);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                Message m = new Message(
+                        rs.getInt("id"),
+                        rs.getInt("sender_id"),
+                        rs.getString("sender_phone"),
+                        groupId, 
+                        rs.getString("type"),
+                        rs.getString("filename"),
+                        rs.getString("content"),
+                        "DELIVERED",
+                        rs.getTimestamp("sent_at")
+                );
+                list.add(m);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return list;
+    }
+
+    public byte[] getGroupMessageData(int msgId) {
+        String sql = "SELECT data FROM group_messages WHERE id = ?";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, msgId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                return rs.getBytes("data");
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return new byte[0];
+    }
+
+    public List<String[]> getInteractedUsers(int userId) {
+        List<String[]> list = new ArrayList<>();
+        // Get unique users from messages where the user is sender or receiver
+        String sql = "SELECT DISTINCT u.id, u.phone, u.username, u.status " +
+                     "FROM users u " +
+                     "WHERE u.id != ? AND u.id IN (" +
+                     "  SELECT sender_id FROM messages WHERE receiver_id = ? " +
+                     "  UNION " +
+                     "  SELECT receiver_id FROM messages WHERE sender_id = ? " +
+                     ")";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            ps.setInt(2, userId);
+            ps.setInt(3, userId);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                list.add(new String[]{
+                        String.valueOf(rs.getInt("id")),
+                        rs.getString("phone"),
+                        rs.getString("username"),
+                        rs.getString("status")
+                });
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return list;
+    }
 }
