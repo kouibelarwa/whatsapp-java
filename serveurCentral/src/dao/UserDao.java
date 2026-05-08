@@ -15,6 +15,41 @@ public class UserDao {
         return (u != null) ? u.getPhone() : phone;
     }
 
+    public static void initGroupTables() {
+        String createGroups = "CREATE TABLE IF NOT EXISTS groups_ (" +
+                              "id INT AUTO_INCREMENT PRIMARY KEY, " +
+                              "name VARCHAR(255) NOT NULL, " +
+                              "created_by INT NOT NULL)";
+        
+        String createGroupMembers = "CREATE TABLE IF NOT EXISTS group_members (" +
+                                    "group_id INT NOT NULL, " +
+                                    "user_id INT NOT NULL, " +
+                                    "is_admin BOOLEAN DEFAULT FALSE, " +
+                                    "PRIMARY KEY (group_id, user_id))";
+        
+        String createGroupMessages = "CREATE TABLE IF NOT EXISTS group_messages (" +
+                                     "id INT AUTO_INCREMENT PRIMARY KEY, " +
+                                     "group_id INT NOT NULL, " +
+                                     "sender_id INT NOT NULL, " +
+                                     "type VARCHAR(50) NOT NULL, " +
+                                     "filename VARCHAR(255), " +
+                                     "content TEXT, " +
+                                     "data LONGBLOB, " +
+                                     "sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)";
+
+        try (Connection conn = DBConnection.getConnection();
+             Statement stmt = conn.createStatement()) {
+            stmt.execute(createGroups);
+            stmt.execute(createGroupMembers);
+            stmt.execute(createGroupMessages);
+            try {
+                stmt.execute("ALTER TABLE group_members ADD COLUMN is_admin BOOLEAN DEFAULT FALSE");
+            } catch (Exception e) {} // Ignorer si la colonne existe déjà
+        } catch (Exception e) {
+            System.err.println("[UserDao] Erreur initialisation des tables de groupe: " + e.getMessage());
+        }
+    }
+
     public void saveVerificationCode(String phone, String code) {
         String dbPhone = getExactPhoneFromDB(phone);
         String sql = "UPDATE users SET verification_code = ? WHERE phone = ?";
@@ -190,5 +225,114 @@ public class UserDao {
     private String normalizeDigits(String input) {
         if (input == null) return "";
         return input.replaceAll("[^0-9]", "");
+    }
+
+    // --- Group Operations ---
+
+    public int createGroup(String name, int createdBy) {
+        String sql = "INSERT INTO groups_ (name, created_by) VALUES (?, ?)";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, name);
+            ps.setInt(2, createdBy);
+            ps.executeUpdate();
+            ResultSet rs = ps.getGeneratedKeys();
+            if (rs.next()) {
+                return rs.getInt(1);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return -1;
+    }
+
+    public void addMember(int groupId, int userId, boolean isAdmin) {
+        String sql = "INSERT INTO group_members (group_id, user_id, is_admin) VALUES (?, ?, ?)";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, groupId);
+            ps.setInt(2, userId);
+            ps.setBoolean(3, isAdmin);
+            ps.executeUpdate();
+        } catch (Exception e) {
+            // Ignore if exists
+        }
+    }
+
+    public void removeMember(int groupId, int userId) {
+        String sql = "DELETE FROM group_members WHERE group_id = ? AND user_id = ?";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, groupId);
+            ps.setInt(2, userId);
+            ps.executeUpdate();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void promoteAdmin(int groupId, int userId) {
+        String sql = "UPDATE group_members SET is_admin = TRUE WHERE group_id = ? AND user_id = ?";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, groupId);
+            ps.setInt(2, userId);
+            ps.executeUpdate();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public List<Integer> getGroupMembers(int groupId) {
+        List<Integer> members = new ArrayList<>();
+        String sql = "SELECT user_id FROM group_members WHERE group_id = ?";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, groupId);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                members.add(rs.getInt("user_id"));
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return members;
+    }
+
+    public List<String[]> getUserGroups(int userId) {
+        List<String[]> groups = new ArrayList<>();
+        String sql = "SELECT g.id, g.name FROM groups_ g JOIN group_members gm ON g.id = gm.group_id WHERE gm.user_id = ?";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                groups.add(new String[]{String.valueOf(rs.getInt("id")), rs.getString("name")});
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return groups;
+    }
+
+    public List<String[]> getGroupMembersWithStatus(int groupId) {
+        List<String[]> members = new ArrayList<>();
+        String sql = "SELECT u.id, u.username, u.phone, gm.is_admin FROM users u JOIN group_members gm ON u.id = gm.user_id WHERE gm.group_id = ?";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, groupId);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                members.add(new String[]{
+                        rs.getString("username"), 
+                        String.valueOf(rs.getInt("id")), 
+                        rs.getString("phone"),
+                        String.valueOf(rs.getBoolean("is_admin"))
+                });
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return members;
     }
 }

@@ -17,9 +17,9 @@ public class NetworkClient {
 
     private void ensureConnected() throws IOException {
         if (socket == null || socket.isClosed() || out == null || in == null) {
-            System.out.println("[NetworkClient] Tentative connexion → " + host + ":" + port);
+            System.out.println("[NetworkClient] Tentative connexion -> " + host + ":" + port);
             socket = new Socket(host, port);
-            System.out.println("[NetworkClient] Connecté ✅");
+            System.out.println("[NetworkClient] Connecté ");
             out = new DataOutputStream(socket.getOutputStream());
             in  = new DataInputStream(socket.getInputStream());
         }

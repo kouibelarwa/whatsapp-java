@@ -78,8 +78,13 @@ public class ContactView {
                     if (row != null) {
                         Label statusLabel = (Label) row.getProperties().get("statusLabel");
                         if (statusLabel != null) {
-                            statusLabel.setText(status.equals("ONLINE") ? "En ligne" : "Hors ligne");
-                            statusLabel.setStyle("-fx-text-fill: " + (status.equals("ONLINE") ? "#25D366" : "gray") + "; -fx-font-size: 12px;");
+                            if (status.equals("ONLINE") || status.equals("OFFLINE")) {
+                                statusLabel.setText(status.equals("ONLINE") ? "En ligne" : "Hors ligne");
+                                statusLabel.setStyle("-fx-text-fill: " + (status.equals("ONLINE") ? "#25D366" : "gray") + "; -fx-font-size: 12px;");
+                            } else {
+                                statusLabel.setText(status);
+                                statusLabel.setStyle("-fx-text-fill: #a0a0a0; -fx-font-size: 11px;");
+                            }
                         }
                     }
                 }
@@ -129,6 +134,15 @@ public class ContactView {
         }
     }
 
+    public boolean hasContactByName(String name) {
+        String cleanName = name.trim().toLowerCase(Locale.ROOT);
+        for (HBox row : contactRows.values()) {
+            String cName = String.valueOf(row.getProperties().getOrDefault("contactName", "")).toLowerCase(Locale.ROOT);
+            if (cName.equals(cleanName)) return true;
+        }
+        return false;
+    }
+
     private void addContactUI(String phone, String name, String status) {
         HBox item = new HBox(12);
         item.setPadding(new Insets(12, 15, 12, 15));
@@ -148,8 +162,14 @@ public class ContactView {
         
         info.getChildren().addAll(nameLbl, phoneLbl);
 
-        Label statusLbl = new Label("ONLINE".equals(status) ? "En ligne" : "Hors ligne");
-        statusLbl.setStyle("-fx-text-fill: " + ("ONLINE".equals(status) ? "#25D366" : "gray") + "; -fx-font-size: 12px;");
+        Label statusLbl = new Label();
+        if (status.equals("ONLINE") || status.equals("OFFLINE")) {
+            statusLbl.setText(status.equals("ONLINE") ? "En ligne" : "Hors ligne");
+            statusLbl.setStyle("-fx-text-fill: " + (status.equals("ONLINE") ? "#25D366" : "gray") + "; -fx-font-size: 12px;");
+        } else {
+            statusLbl.setText(status);
+            statusLbl.setStyle("-fx-text-fill: #a0a0a0; -fx-font-size: 11px;");
+        }
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
@@ -168,6 +188,7 @@ public class ContactView {
 
         item.getProperties().put("statusLabel", statusLbl);
         item.getProperties().put("searchText", (phone + " " + name).toLowerCase(Locale.ROOT));
+        item.getProperties().put("contactName", name);
         contactRows.put(phone, item);
         convList.getChildren().add(item);
     }

@@ -102,11 +102,15 @@ public class ChatView {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        Button btnAdd = new Button("+");
-        btnAdd.setStyle("-fx-background-color: transparent; -fx-text-fill: #25D366; -fx-font-size: 22px; -fx-font-weight: bold;");
+        Button btnAdd = new Button("+ Contact");
+        btnAdd.setStyle("-fx-background-color: transparent; -fx-text-fill: #25D366; -fx-font-size: 14px; -fx-font-weight: bold;");
         btnAdd.setOnAction(e -> addContact());
 
-        header.getChildren().addAll(avatar, nameBox, spacer, btnAdd);
+        Button btnGroup = new Button("+ Groupe");
+        btnGroup.setStyle("-fx-background-color: transparent; -fx-text-fill: #25D366; -fx-font-size: 14px; -fx-font-weight: bold;");
+        btnGroup.setOnAction(e -> createGroup());
+
+        header.getChildren().addAll(avatar, nameBox, spacer, btnAdd, btnGroup);
 
         // Search Bar
         TextField searchField = new TextField();
@@ -202,32 +206,64 @@ public class ChatView {
                     case "video":
                     case "image":
                     case "file":
+                    case "GROUP_MSG:text":
+                    case "GROUP_MSG:audio":
+                    case "GROUP_MSG:video":
+                    case "GROUP_MSG:image":
+                    case "GROUP_MSG:file":
                         Platform.runLater(() -> {
-                            String normalizedSender = normalizePhone(sender);
+                            boolean isGroupMsg = type.startsWith("GROUP_MSG:");
+                            String msgType = isGroupMsg ? type.split(":")[1] : type;
+                            // Pour les groupes, le sender sera GROUP_groupId:senderPhone
+                            String normalizedSender = isGroupMsg ? sender : normalizePhone(sender);
+                            String senderPhoneForUi = isGroupMsg ? sender.split(":")[1] : sender;
+                            String groupIdStr = isGroupMsg ? sender.split(":")[0] : null;
+
                             ConversationView cachedConv = conversationCache.get(normalizedSender);
                             if (cachedConv == null && normalizedSender != null && !normalizedSender.isBlank()) {
-                                String senderForUi = sender;
-                                contactView.addDynamicContact(normalizedSender, senderForUi, "ONLINE");
-                                cachedConv = conversationCache.computeIfAbsent(normalizedSender, k -> {
-                                    ConversationView c = new ConversationView(userId, phone, sender, sender, "ONLINE");
-                                    c.setOnBack(() -> {
-                                        activeContactPhone = null;
-                                        activeConversation = null;
-                                        showWelcomeScreen();
+                                if (isGroupMsg) {
+                                    contactView.addDynamicContact(normalizedSender, "Groupe " + groupIdStr.replace("GROUP_", ""), "ONLINE");
+                                    cachedConv = conversationCache.computeIfAbsent(normalizedSender, k -> {
+                                        ConversationView c = new ConversationView(userId, phone, normalizedSender, "Groupe " + groupIdStr.replace("GROUP_", ""), "ONLINE");
+                                        c.setOnBack(() -> {
+                                            activeContactPhone = null;
+                                            activeConversation = null;
+                                            showWelcomeScreen();
+                                        });
+                                        // On cache les appels pour les groupes pour l'instant (Livrable 2)
+                                        c.setOnAudioCall(() -> showToast("Appels de groupe non supportés"));
+                                        c.setOnVideoCall(() -> showToast("Appels de groupe non supportés"));
+                                        return c;
                                     });
-                                    c.setOnAudioCall(() -> startOutgoingCall(senderForUi, senderForUi, "audio"));
-                                    c.setOnVideoCall(() -> startOutgoingCall(senderForUi, senderForUi, "video"));
-                                    return c;
-                                });
+                                } else {
+                                    String senderForUi = sender;
+                                    contactView.addDynamicContact(normalizedSender, senderForUi, "ONLINE");
+                                    cachedConv = conversationCache.computeIfAbsent(normalizedSender, k -> {
+                                        ConversationView c = new ConversationView(userId, phone, sender, sender, "ONLINE");
+                                        c.setOnBack(() -> {
+                                            activeContactPhone = null;
+                                            activeConversation = null;
+                                            showWelcomeScreen();
+                                        });
+                                        c.setOnAudioCall(() -> startOutgoingCall(senderForUi, senderForUi, "audio"));
+                                        c.setOnVideoCall(() -> startOutgoingCall(senderForUi, senderForUi, "video"));
+                                        return c;
+                                    });
+                                }
                             }
                             if (cachedConv != null) {
-                                cachedConv.receiveMessage(type, filename, data);
+                                cachedConv.receiveMessage(msgType, filename, data, senderPhoneForUi);
                             }
                             if (normalizedSender == null || !normalizedSender.equals(activeContactPhone) || activeConversation == null) {
-                                String msgText = "text".equals(type) ? new String(data, StandardCharsets.UTF_8) : "📎 " + (filename != null ? filename : type);
-                                showNotification(sender, msgText);
+                                String msgText = "text".equals(msgType) ? new String(data, StandardCharsets.UTF_8) : "📎 " + (filename != null ? filename : msgType);
+                                showNotification(isGroupMsg ? "Groupe (" + senderPhoneForUi + ")" : sender, msgText);
                             }
                         });
+                        break;
+
+                    case "GROUP_SIGNAL":
+                        String groupPayload = new String(data, StandardCharsets.UTF_8);
+                        Platform.runLater(() -> handleGroupSignal(groupPayload));
                         break;
 
                     case "CALL_SIGNAL":
@@ -278,21 +314,21 @@ public class ChatView {
         }
 
         if (payload.startsWith("CALL_ACCEPTED:")) { 
-            showToast("✅ Appel accepté !"); 
+            showToast("Appel accepté !");
             if (activeCallView != null) activeCallView.startCallSession();
             return; 
         }
         if (payload.startsWith("CALL_REJECTED:")) { 
-            showToast("❌ Appel refusé."); 
+            showToast("r Appel refusé.");
             if (activeCallView != null) { activeCallView.endCall(); activeCallView = null; }
             return; 
         }
         if (payload.startsWith("CALL_ENDED:")) { 
-            showToast("📵 Appel terminé."); 
+            showToast(" Appel terminé.");
             if (activeCallView != null) { activeCallView.endCall(); activeCallView = null; }
             return; 
         }
-        if (payload.startsWith("CALL_MISSED:")) { showToast("📵 Appel manqué."); }
+        if (payload.startsWith("CALL_MISSED:")) { showToast(" Appel manqué."); }
     }
 
     private void showNotification(String sender, String msg) {
@@ -327,6 +363,63 @@ public class ChatView {
                 try { Thread.sleep(500); } catch (InterruptedException ignored) {}
                 SocketManager.getInstance().sendBinary("CONTACT_SIGNAL", "", "", "GET_CONTACTS".getBytes(StandardCharsets.UTF_8));
             }).start();
+        }
+    }
+
+    private void createGroup() {
+        TextInputDialog membersDialog = new TextInputDialog();
+        membersDialog.setTitle("Membres du groupe");
+        membersDialog.setHeaderText("Entrer les noms des contacts à ajouter (séparés par des virgules) :");
+        Optional<String> membersResult = membersDialog.showAndWait();
+
+        if (membersResult.isPresent() && !membersResult.get().trim().isEmpty()) {
+            String membersStr = membersResult.get().trim();
+            String[] membersArr = membersStr.split(",");
+            for (String m : membersArr) {
+                if (m.trim().isEmpty()) continue;
+                if (!contactView.hasContactByName(m.trim())) {
+                    Alert alert = new Alert(Alert.AlertType.ERROR, "Erreur : Contact introuvable (" + m.trim() + ") !");
+                    alert.showAndWait();
+                    return; // Stop creation
+                }
+            }
+
+            TextInputDialog nameDialog = new TextInputDialog();
+            nameDialog.setTitle("Nouveau Groupe");
+            nameDialog.setHeaderText("Entrer le nom du groupe :");
+            Optional<String> nameResult = nameDialog.showAndWait();
+
+            if (nameResult.isPresent() && !nameResult.get().trim().isEmpty()) {
+                String groupName = nameResult.get().trim();
+                String payload = "CREATE_GROUP:" + groupName + ":" + membersStr;
+                SocketManager.getInstance().sendBinary("GROUP_SIGNAL", "", "", payload.getBytes(StandardCharsets.UTF_8));
+            }
+        }
+    }
+
+    private void handleGroupSignal(String payload) {
+        if (payload.startsWith("GROUP_CREATED:") || payload.startsWith("GROUP_ADDED:")) {
+            String[] parts = payload.split(":", 3);
+            if (parts.length >= 3) {
+                String groupId = parts[1];
+                String groupName = parts[2];
+                String groupKey = "GROUP_" + groupId;
+                contactView.addDynamicContact(groupKey, groupName, "ONLINE");
+                showToast("Groupe " + groupName + " ajouté !");
+            }
+        } else if (payload.startsWith("GROUP_ERROR:")) {
+            Alert alert = new Alert(Alert.AlertType.ERROR, payload.substring(12));
+            alert.showAndWait();
+        } else if (payload.startsWith("GROUP_INFO_REPLY:")) {
+            if (activeConversation != null) {
+                activeConversation.showGroupInfoDialog(payload);
+            }
+        } else if (payload.startsWith("GROUP_UPDATED:")) {
+            contactView.loadContacts();
+            if (activeConversation != null && payload.endsWith(String.valueOf(activeConversation.getContactId()))) {
+                // Si la boîte de dialogue est ouverte, on la met à jour (on simule un clic)
+                SocketManager.getInstance().sendBinary("GROUP_SIGNAL", "", "", ("GET_GROUP_INFO:" + activeConversation.getContactId()).getBytes(StandardCharsets.UTF_8));
+            }
         }
     }
 

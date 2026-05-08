@@ -47,7 +47,7 @@ public class ClientHandler extends Thread {
                 return;
             }
 
-            // Note : On ne livre pas les messages ici car le client les charge 
+            // Note : On ne livre pas les messages ici car le client les charge
             // directement depuis la base de données via loadHistory()
             // msgService.deliverOfflineMessages(userId, userPhone, this);
 
@@ -221,12 +221,62 @@ public class ClientHandler extends Thread {
                 break;
             }
 
+            case "GROUP_SIGNAL": {
+                String payload = new String(data, StandardCharsets.UTF_8);
+                if (payload.startsWith("CREATE_GROUP:")) {
+                    // CREATE_GROUP:groupName:phone1,phone2...
+                    String[] parts = payload.split(":", 3);
+                    if (parts.length >= 2) {
+                        String groupName = parts[1];
+                        String[] members = parts.length > 2 ? parts[2].split(",") : new String[0];
+                        java.util.List<String> memberPhones = new java.util.ArrayList<>(java.util.Arrays.asList(members));
+                        msgService.createGroup(groupName, userId, userPhone, memberPhones, this);
+                    }
+                } else if (payload.startsWith("GET_GROUP_INFO:")) {
+                    int groupId = Integer.parseInt(payload.split(":")[1]);
+                    msgService.sendGroupInfo(groupId, this);
+                } else if (payload.startsWith("ADD_GROUP_MEMBER:")) {
+                    String[] parts = payload.split(":");
+                    msgService.addGroupMember(Integer.parseInt(parts[1]), parts[2], userId, this);
+                } else if (payload.startsWith("REMOVE_GROUP_MEMBER:")) {
+                    String[] parts = payload.split(":");
+                    msgService.removeGroupMember(Integer.parseInt(parts[1]), Integer.parseInt(parts[2]), userId, this);
+                } else if (payload.startsWith("PROMOTE_ADMIN:")) {
+                    String[] parts = payload.split(":");
+                    msgService.promoteAdmin(Integer.parseInt(parts[1]), Integer.parseInt(parts[2]), userId, this);
+                } else if (payload.startsWith("LEAVE_GROUP:")) {
+                    msgService.leaveGroup(Integer.parseInt(payload.split(":")[1]), userId, this);
+                }
+                break;
+            }
+
+            case "GROUP_MSG:text":
+            case "GROUP_MSG:audio":
+            case "GROUP_MSG:video":
+            case "GROUP_MSG:image":
+            case "GROUP_MSG:file": {
+                // receiverPhone contains the groupId
+                int groupId = Integer.parseInt(receiverPhone);
+                String actualType = type.split(":")[1];
+
+                Message m;
+                if ("text".equals(actualType)) {
+                    String content = new String(data, StandardCharsets.UTF_8);
+                    // senderPhone is passed so clients know who sent it
+                    m = Message.text(userId, userPhone, groupId, content);
+                } else {
+                    m = Message.binary(userId, userPhone, groupId, actualType, filename);
+                }
+                msgService.processGroupMessage(m, groupId, data);
+                break;
+            }
+
             case "CALL_SIGNAL": {
                 String payload = new String(data, StandardCharsets.UTF_8);
                 String[] parts = payload.split(":");
                 if (parts.length < 2) return;
                 String signal = parts[0];
-                
+
                 String otherPhone;
                 String callType = "audio";
 

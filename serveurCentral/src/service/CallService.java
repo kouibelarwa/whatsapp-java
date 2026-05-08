@@ -212,7 +212,7 @@ public class CallService {
         Message notice = Message.text(callerId, callerPhone, calleeId, content);
         int saved = messageDao.save(notice, null);
         if (saved != -1) {
-            // Also notify the receiver instantly if online
+            // Also notify the receiver instantly if online²
             ClientHandler calleeHandler = ChatServer.clients.get(calleeId);
             if (calleeHandler != null) {
                 try {

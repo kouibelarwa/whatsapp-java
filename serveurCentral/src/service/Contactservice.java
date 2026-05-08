@@ -2,6 +2,7 @@ package service;
 
 import dao.ContactDao;
 import dao.UserDao;
+import dao.MessageDao;
 import model.User;
 import server.ChatServer;
 import server.ClientHandler;
@@ -11,6 +12,7 @@ import java.util.List;
 public class Contactservice {
     private final ContactDao contactDao = new ContactDao();
     private final UserDao userDao = new UserDao();
+    private final MessageDao messageDao = new MessageDao();
 
     public void handle(int userId, String userPhone, String payload, ClientHandler handler) {
         if (payload.startsWith("ADD:")) {
@@ -58,7 +60,11 @@ public class Contactservice {
 
     public void handleGet(int userId, ClientHandler handler) {
         List<String[]> list = contactDao.getContactsWithNickname(userId);
+        List<String[]> interactedList = messageDao.getInteractedUsers(userId);
+        
+        java.util.Set<String> addedPhones = new java.util.HashSet<>();
         StringBuilder sb = new StringBuilder("CONTACTS_LIST:");
+        
         for (String[] c : list) {
             int contactId = Integer.parseInt(c[0]);
             String phone    = c[1];
@@ -66,8 +72,41 @@ public class Contactservice {
             String status   = ChatServer.clients.containsKey(contactId) ? "ONLINE" : "OFFLINE";
             String nickname = c[4];
             String displayName = (nickname != null && !nickname.isEmpty()) ? nickname : username;
+            
             sb.append(phone).append(":").append(displayName).append(":").append(status).append("|");
+            addedPhones.add(phone);
         }
+        
+        for (String[] c : interactedList) {
+            String phone = c[1];
+            if (!addedPhones.contains(phone)) {
+                int contactId = Integer.parseInt(c[0]);
+                String username = c[2];
+                String status = ChatServer.clients.containsKey(contactId) ? "ONLINE" : "OFFLINE";
+                sb.append(phone).append(":").append(username).append(":").append(status).append("|");
+                addedPhones.add(phone);
+            }
+        }
+        
+        List<String[]> groups = userDao.getUserGroups(userId);
+        for (String[] g : groups) {
+            String groupId = g[0];
+            String groupName = g[1];
+            
+            List<String[]> membersList = userDao.getGroupMembersWithStatus(Integer.parseInt(groupId));
+            StringBuilder membersStatus = new StringBuilder();
+            for (int i = 0; i < membersList.size(); i++) {
+                String mName = membersList.get(i)[0];
+                int mId = Integer.parseInt(membersList.get(i)[1]);
+                boolean isOnline = ChatServer.clients.containsKey(mId);
+                membersStatus.append(mName).append(isOnline ? " (en ligne)" : "");
+                if (i < membersList.size() - 1) membersStatus.append(", ");
+            }
+            if (membersStatus.length() == 0) membersStatus.append("ONLINE");
+            
+            sb.append("GROUP_").append(groupId).append(":").append(groupName).append(":").append(membersStatus.toString()).append("|");
+        }
+        
         sendResponse(handler, sb.toString());
     }
 
