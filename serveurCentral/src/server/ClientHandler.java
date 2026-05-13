@@ -37,22 +37,15 @@ public class ClientHandler extends Thread {
     @Override
     public void run() {
         try {
-            binIn  = new DataInputStream(
-                    new BufferedInputStream(socket.getInputStream()));
-            binOut = new DataOutputStream(
-                    new BufferedOutputStream(socket.getOutputStream()));
+            binIn  = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+            binOut = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
 
             if (!handleAuth()) {
                 socket.close();
                 return;
             }
 
-            // Note : On ne livre pas les messages ici car le client les charge
-            // directement depuis la base de données via loadHistory()
-            // msgService.deliverOfflineMessages(userId, userPhone, this);
-
-
-            // Boucle principale
+            msgService.deliverOfflineMessages(userId, userPhone, this);
             chatLoop();
 
         } catch (Exception e) {
@@ -62,17 +55,17 @@ public class ClientHandler extends Thread {
         }
     }
 
+    // ── AUTH ──────────────────────────────────────────────────────────────────
+
     private boolean handleAuth() throws IOException {
         String line = binIn.readUTF();
         if (line == null) return false;
 
         if (line.startsWith("AUTH_REQUEST:"))
-            return handleAuthRequest(
-                    line.substring("AUTH_REQUEST:".length()).trim());
+            return handleAuthRequest(line.substring("AUTH_REQUEST:".length()).trim());
 
         if (line.startsWith("SESSION:"))
-            return handleSessionReconnect(
-                    line.substring("SESSION:".length()).trim());
+            return handleSessionReconnect(line.substring("SESSION:".length()).trim());
 
         sendText("ERROR:UNKNOWN_COMMAND");
         return false;
@@ -88,7 +81,6 @@ public class ClientHandler extends Thread {
 
         System.out.println("[Server] En attente du message VERIFY_CODE...");
         String verifyLine = binIn.readUTF();
-
         System.out.println("[Server] Reçu : " + verifyLine);
 
         if (verifyLine == null || !verifyLine.startsWith("VERIFY_CODE:")) {
@@ -98,7 +90,6 @@ public class ClientHandler extends Thread {
         }
         String[] parts = verifyLine.split(":", 4);
         if (parts.length < 4) {
-
             sendText("AUTH_FAIL:BAD_FORMAT");
             return false;
         }
@@ -107,10 +98,7 @@ public class ClientHandler extends Thread {
         String reqCode     = parts[2];
         String reqUsername = parts[3].trim();
 
-        String expectedCode = SmsApiServer.getCode(reqPhone);
-        boolean codeMatches = (expectedCode != null && expectedCode.equals(reqCode));
-
-        if (!codeMatches && !userDao.verifyCode(reqPhone, reqCode)) {
+        if (!userDao.verifyCode(reqPhone, reqCode)) {
             sendText("AUTH_FAIL:WRONG_CODE");
             return false;
         }
@@ -119,8 +107,8 @@ public class ClientHandler extends Thread {
         userDao.markVerifiedAndSetUsername(reqPhone, reqUsername);
         int id = userDao.getIdByPhone(reqPhone);
         if (id == -1) {
-            id = Math.abs(reqPhone.hashCode());
-            System.err.println("[Server] BDD injoignable, utilisation d'un ID temporaire: " + id);
+            sendText("AUTH_FAIL:DB_ERROR");
+            return false;
         }
 
         if (ChatServer.clients.containsKey(id)) {
@@ -165,10 +153,11 @@ public class ClientHandler extends Thread {
         broadcastStatus("ONLINE");
 
         sendText("SESSION_OK:" + userId + ":" + username);
-        System.out.println("[Server] " + username
-                + " (id=" + userId + ") reconnecté via session.");
+        System.out.println("[Server] " + username + " (id=" + userId + ") reconnecté via session.");
         return true;
     }
+
+    // ── CHAT LOOP ─────────────────────────────────────────────────────────────
 
     private void chatLoop() throws IOException {
         try {
@@ -180,8 +169,7 @@ public class ClientHandler extends Thread {
                 int    size          = binIn.readInt();
 
                 if (size < 0 || size > MAX_SIZE) {
-                    System.err.println("[Security] Taille invalide de "
-                            + username + " : " + size);
+                    System.err.println("[Security] Taille invalide de " + username + " : " + size);
                     break;
                 }
 
@@ -194,6 +182,8 @@ public class ClientHandler extends Thread {
         }
     }
 
+    // ── DISPATCH ──────────────────────────────────────────────────────────────
+
     private void dispatch(String type, String receiverPhone,
                           String filename, byte[] data) {
         switch (type) {
@@ -203,8 +193,8 @@ public class ClientHandler extends Thread {
             case "video":
             case "image":
             case "file": {
-                User receiverUser = userDao.searchByPhone(receiverPhone);
-                if (receiverUser == null) {
+                int receiverId = userDao.getIdByPhone(receiverPhone);
+                if (receiverId == -1) {
                     System.err.println("[Server] Phone inconnu : " + receiverPhone);
                     return;
                 }
@@ -215,37 +205,6 @@ public class ClientHandler extends Thread {
                     m = Message.text(userId, userPhone, receiverId, content);
                 } else {
                     m = Message.binary(userId, userPhone, receiverId, type, filename);
-                }
-
-                msgService.process(m, receiverPhone, data);
-                break;
-            }
-
-            case "GROUP_SIGNAL": {
-                String payload = new String(data, StandardCharsets.UTF_8);
-                if (payload.startsWith("CREATE_GROUP:")) {
-                    // CREATE_GROUP:groupName:phone1,phone2...
-                    String[] parts = payload.split(":", 3);
-                    if (parts.length >= 2) {
-                        String groupName = parts[1];
-                        String[] members = parts.length > 2 ? parts[2].split(",") : new String[0];
-                        java.util.List<String> memberPhones = new java.util.ArrayList<>(java.util.Arrays.asList(members));
-                        msgService.createGroup(groupName, userId, userPhone, memberPhones, this);
-                    }
-                } else if (payload.startsWith("GET_GROUP_INFO:")) {
-                    int groupId = Integer.parseInt(payload.split(":")[1]);
-                    msgService.sendGroupInfo(groupId, this);
-                } else if (payload.startsWith("ADD_GROUP_MEMBER:")) {
-                    String[] parts = payload.split(":");
-                    msgService.addGroupMember(Integer.parseInt(parts[1]), parts[2], userId, this);
-                } else if (payload.startsWith("REMOVE_GROUP_MEMBER:")) {
-                    String[] parts = payload.split(":");
-                    msgService.removeGroupMember(Integer.parseInt(parts[1]), Integer.parseInt(parts[2]), userId, this);
-                } else if (payload.startsWith("PROMOTE_ADMIN:")) {
-                    String[] parts = payload.split(":");
-                    msgService.promoteAdmin(Integer.parseInt(parts[1]), Integer.parseInt(parts[2]), userId, this);
-                } else if (payload.startsWith("LEAVE_GROUP:")) {
-                    msgService.leaveGroup(Integer.parseInt(payload.split(":")[1]), userId, this);
                 }
                 break;
             }
@@ -273,51 +232,26 @@ public class ClientHandler extends Thread {
 
             case "CALL_SIGNAL": {
                 String payload = new String(data, StandardCharsets.UTF_8);
-                String[] parts = payload.split(":");
+                // Format : SIGNAL:otherPhone  OU  SIGNAL:otherPhone:callId
+                String[] parts = payload.split(":", 3);
                 if (parts.length < 2) return;
-                String signal = parts[0];
 
-                String otherPhone;
-                String callType = "audio";
-
-                if (signal.equals("CALL_REQUEST") && parts.length >= 3) {
-                    callType = parts[1].toLowerCase();
-                    otherPhone = parts[2];
-                } else {
-                    otherPhone = parts[parts.length - 1];
-                }
-
-                if (otherPhone.startsWith("GROUP_")) {
-                    int groupId = Integer.parseInt(otherPhone.replace("GROUP_", ""));
-                    java.util.List<Integer> members = userDao.getGroupMembers(groupId);
-                    for (int memberId : members) {
-                        if (memberId == userId) continue;
-                        ClientHandler receiver = ChatServer.clients.get(memberId);
-                        if (receiver != null) {
-                            try {
-                                if (signal.equals("CALL_REQUEST")) {
-                                    receiver.send("CALL_SIGNAL", otherPhone, "", ("CALL_INCOMING:" + callType + ":" + otherPhone).getBytes(StandardCharsets.UTF_8));
-                                } else {
-                                    receiver.send("CALL_SIGNAL", otherPhone, "", (signal + ":" + otherPhone).getBytes(StandardCharsets.UTF_8));
-                                }
-                            } catch (Exception e) {}
-                        }
-                    }
-                    break;
-                }
+                String signal     = parts[0];
+                String otherPhone = parts[1];
+                int    callId     = parts.length >= 3 ? parseCallId(parts[2]) : -1;
 
                 switch (signal) {
                     case "CALL_REQUEST":
                         callService.handleRequest(userId, userPhone, otherPhone, callType);
                         break;
                     case "CALL_ACCEPT":
-                        callService.handleAccept(userId, userPhone, otherPhone);
+                        callService.handleAccept(userId, userPhone, otherPhone, callId);
                         break;
                     case "CALL_REJECT":
-                        callService.handleReject(userId, userPhone, otherPhone);
+                        callService.handleReject(userId, userPhone, otherPhone, callId);
                         break;
                     case "CALL_END":
-                        callService.handleEnd(userId, userPhone, otherPhone);
+                        callService.handleEnd(userId, userPhone, otherPhone, callId);
                         break;
                     default:
                         System.err.println("[Call] Signal inconnu : " + signal);
@@ -369,6 +303,14 @@ public class ClientHandler extends Thread {
         }
     }
 
+    // ✅ ICI — en dehors du switch, à l'intérieur de la classe
+    private int parseCallId(String s) {
+        try { return Integer.parseInt(s.trim()); }
+        catch (Exception e) { return -1; }
+    }
+
+    // ── SEND ──────────────────────────────────────────────────────────────────
+
     private synchronized void sendText(String msg) throws IOException {
         binOut.writeUTF(msg);
         binOut.flush();
@@ -381,21 +323,21 @@ public class ClientHandler extends Thread {
             return;
         }
         binOut.writeUTF(type);
-        binOut.writeUTF(senderPhone != null ? senderPhone : "");
+        binOut.writeUTF(senderPhone);
         binOut.writeUTF("");
-        binOut.writeUTF(filename != null ? filename : "");
+        binOut.writeUTF(filename);
         binOut.writeInt(data != null ? data.length : 0);
         if (data != null && data.length > 0) binOut.write(data);
         binOut.flush();
     }
 
+    // ── DISCONNECT ────────────────────────────────────────────────────────────
+
     private void disconnect() {
         if (userId != -1) {
             ChatServer.clients.remove(userId);
             userDao.updateStatusById(userId, "OFFLINE");
-            broadcastStatus("OFFLINE");
-            System.out.println("[Server] " + username
-                    + " (id=" + userId + ") déconnecté.");
+            System.out.println("[Server] " + username + " (id=" + userId + ") déconnecté.");
         }
         try { socket.close(); } catch (IOException ignored) {}
     }

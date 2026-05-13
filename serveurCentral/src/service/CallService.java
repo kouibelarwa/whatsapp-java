@@ -10,85 +10,54 @@ import server.ClientHandler;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
-import dao.CallDao;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
 /**
  * CallService — Gère les signaux d'appel audio/vidéo côté serveur.
- * Route les signaux entre appelant et appelé.
+ * Route les signaux entre appelant et appelé + sauvegarde en BD.
  */
 public class CallService {
 
-    private final UserDao userDao = new UserDao();
-    private final MessageDao messageDao = new MessageDao();
-    private final CallDao callDao = new CallDao();
-    
-    // Maps callerPhone (or calleePhone) -> callId
-    private final Map<String, Integer> activeCalls = new ConcurrentHashMap<>();
+    private final UserDao userDao   = new UserDao();
+    private final CallDao callDao   = new CallDao();   // ✅ AJOUTÉ
 
     // ─────────────────────────────────────────────────────────────
     // DEMANDE D'APPEL
     // ─────────────────────────────────────────────────────────────
 
-    /**
-     * Appelant envoie CALL_REQUEST → on notifie l'appelé.
-     */
-    public void handleRequest(int callerId, String callerPhone, String calleePhone, String callType) {
-        System.out.println("[CallService] Appel " + callType + " de " + callerPhone
-                + " → " + calleePhone);
+    public void handleRequest(int callerId, String callerPhone, String calleePhone) {
+        System.out.println("[CallService] Appel de " + callerPhone + " → " + calleePhone);
 
-        User callee = userDao.searchByPhone(calleePhone);
-        if (callee == null) {
+        int calleeId = userDao.getIdByPhone(calleePhone);
+        if (calleeId == -1) {
             System.err.println("[CallService] Appelé inconnu : " + calleePhone);
-            // Notifier l'appelant que le numéro est inconnu
             notifyCaller(callerId, "CALL_REJECTED:" + calleePhone);
             return;
         }
         int calleeId = callee.getId();
         String normalizedCalleePhone = callee.getPhone();
 
+        // ✅ Créer l'appel en BD avec statut RINGING
+        int callId = callDao.createCall(callerId, calleeId);
+        System.out.println("[CallService] Appel créé en BD id=" + callId);
+
         ClientHandler calleeHandler = ChatServer.clients.get(calleeId);
         if (calleeHandler == null) {
-            // Appelé hors ligne
-            System.out.println("[CallService] Appelé hors ligne : " + normalizedCalleePhone);
-            
-            int callId = callDao.createCall(callerId, calleeId);
+            System.out.println("[CallService] Appelé hors ligne : " + calleePhone);
+            // ✅ Marquer MISSED en BD
             if (callId != -1) callDao.markMissed(callId);
-            
-            persistCallNotice(callerId, callerPhone, calleeId, callType, "Appel manqué");
-            notifyCaller(callerId, "CALL_MISSED:" + normalizedCalleePhone);
+            notifyCaller(callerId, "CALL_MISSED:" + calleePhone);
             return;
         }
 
-        // Save call in DB
-        int callId = callDao.createCall(callerId, calleeId);
-        if (callId != -1) {
-            activeCalls.put(callerPhone, callId);
-            activeCalls.put(calleePhone, callId);
-        }
-
-        // Envoyer signal d'appel entrant à l'appelé (inclure le type d'appel)
         try {
-            String signal = "CALL_INCOMING:" + callType + ":" + callerPhone;
-            calleeHandler.send(
-                    "CALL_SIGNAL",
-                    callerPhone,
-                    "",
+            // ✅ Envoyer l'ID de l'appel dans le signal pour que le client puisse le référencer
+            String signal = "CALL_INCOMING:" + callerPhone + ":" + callId;
+            calleeHandler.send("CALL_SIGNAL", callerPhone, "",
                     signal.getBytes(StandardCharsets.UTF_8));
-            System.out.println("[CallService] Signal CALL_INCOMING envoyé à "
-                    + normalizedCalleePhone);
+            System.out.println("[CallService] Signal CALL_INCOMING envoyé à " + calleePhone);
         } catch (IOException e) {
-            System.err.println("[CallService] Erreur envoi CALL_INCOMING : "
-                    + e.getMessage());
-            
-            if (callId != -1) {
-                callDao.markMissed(callId);
-                activeCalls.remove(callerPhone);
-                activeCalls.remove(calleePhone);
-            }
-            persistCallNotice(callerId, callerPhone, calleeId, callType, "Appel manqué");
-            notifyCaller(callerId, "CALL_MISSED:" + normalizedCalleePhone);
+            System.err.println("[CallService] Erreur envoi CALL_INCOMING : " + e.getMessage());
+            if (callId != -1) callDao.markMissed(callId);
+            notifyCaller(callerId, "CALL_MISSED:" + calleePhone);
         }
     }
 
@@ -96,12 +65,11 @@ public class CallService {
     // APPEL ACCEPTÉ
     // ─────────────────────────────────────────────────────────────
 
-    /**
-     * Appelé accepte → notifier l'appelant.
-     */
-    public void handleAccept(int calleeId, String calleePhone, String callerPhone) {
-        System.out.println("[CallService] " + calleePhone
-                + " accepte l'appel de " + callerPhone);
+    public void handleAccept(int calleeId, String calleePhone, String callerPhone, int callId) {
+        System.out.println("[CallService] " + calleePhone + " accepte l'appel de " + callerPhone);
+
+        // ✅ Mettre à jour statut ACCEPTED en BD
+        if (callId != -1) callDao.updateStatus(callId, "ACCEPTED");
 
         int callerId = userDao.getIdByPhone(callerPhone);
         if (callerId == -1) return;
@@ -111,58 +79,47 @@ public class CallService {
 
         try {
             String signal = "CALL_ACCEPTED:" + calleePhone;
-            callerHandler.send(
-                    "CALL_SIGNAL",
-                    calleePhone,
-                    "",
+            callerHandler.send("CALL_SIGNAL", calleePhone, "",
                     signal.getBytes(StandardCharsets.UTF_8));
-            System.out.println("[CallService] Appel accepté — connexion établie entre "
-                    + callerPhone + " et " + calleePhone);
-            
-            Integer callId = activeCalls.get(callerPhone);
-            if (callId != null) {
-                callDao.updateStatus(callId, "ACCEPTED");
-            }
+            System.out.println("[CallService] Appel accepté entre " + callerPhone + " et " + calleePhone);
         } catch (IOException e) {
             System.err.println("[CallService] Erreur CALL_ACCEPT : " + e.getMessage());
         }
+    }
+
+    // Surcharge pour compatibilité si callId non disponible
+    public void handleAccept(int calleeId, String calleePhone, String callerPhone) {
+        handleAccept(calleeId, calleePhone, callerPhone, -1);
     }
 
     // ─────────────────────────────────────────────────────────────
     // APPEL REFUSÉ
     // ─────────────────────────────────────────────────────────────
 
-    /**
-     * Appelé refuse → notifier l'appelant.
-     */
-    public void handleReject(int calleeId, String calleePhone, String callerPhone) {
-        System.out.println("[CallService] " + calleePhone
-                + " refuse l'appel de " + callerPhone);
+    public void handleReject(int calleeId, String calleePhone, String callerPhone, int callId) {
+        System.out.println("[CallService] " + calleePhone + " refuse l'appel de " + callerPhone);
+
+        // ✅ Mettre à jour statut REJECTED en BD
+        if (callId != -1) callDao.updateStatus(callId, "REJECTED");
 
         int callerId = userDao.getIdByPhone(callerPhone);
         if (callerId == -1) return;
-
-        Integer callId = activeCalls.get(callerPhone);
-        if (callId != null) {
-            callDao.updateStatus(callId, "REJECTED");
-            activeCalls.remove(callerPhone);
-            activeCalls.remove(calleePhone);
-        }
-        
-        persistCallNotice(callerId, callerPhone, calleeId, "audio/video", "Appel refusé");
         notifyCaller(callerId, "CALL_REJECTED:" + calleePhone);
+    }
+
+    public void handleReject(int calleeId, String calleePhone, String callerPhone) {
+        handleReject(calleeId, calleePhone, callerPhone, -1);
     }
 
     // ─────────────────────────────────────────────────────────────
     // FIN D'APPEL
     // ─────────────────────────────────────────────────────────────
 
-    /**
-     * Un des deux raccroche → notifier l'autre.
-     */
-    public void handleEnd(int senderId, String senderPhone, String otherPhone) {
-        System.out.println("[CallService] " + senderPhone
-                + " raccroche (autre : " + otherPhone + ")");
+    public void handleEnd(int senderId, String senderPhone, String otherPhone, int callId) {
+        System.out.println("[CallService] " + senderPhone + " raccroche (autre : " + otherPhone + ")");
+
+        // ✅ Mettre à jour statut ENDED en BD
+        if (callId != -1) callDao.updateStatus(callId, "ENDED");
 
         int otherId = userDao.getIdByPhone(otherPhone);
         if (otherId == -1) return;
@@ -172,23 +129,15 @@ public class CallService {
 
         try {
             String signal = "CALL_ENDED:" + senderPhone;
-            otherHandler.send(
-                    "CALL_SIGNAL",
-                    senderPhone,
-                    "",
+            otherHandler.send("CALL_SIGNAL", senderPhone, "",
                     signal.getBytes(StandardCharsets.UTF_8));
-                    
-            Integer callId = activeCalls.get(senderPhone);
-            if (callId != null) {
-                callDao.updateStatus(callId, "ENDED");
-                activeCalls.remove(senderPhone);
-                activeCalls.remove(otherPhone);
-                
-                persistCallNotice(senderId, senderPhone, otherId, "audio/video", "Appel terminé");
-            }
         } catch (IOException e) {
             System.err.println("[CallService] Erreur CALL_END : " + e.getMessage());
         }
+    }
+
+    public void handleEnd(int senderId, String senderPhone, String otherPhone) {
+        handleEnd(senderId, senderPhone, otherPhone, -1);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -199,29 +148,10 @@ public class CallService {
         ClientHandler callerHandler = ChatServer.clients.get(callerId);
         if (callerHandler == null) return;
         try {
-            callerHandler.send(
-                    "CALL_SIGNAL", "", "",
+            callerHandler.send("CALL_SIGNAL", "", "",
                     signal.getBytes(StandardCharsets.UTF_8));
         } catch (IOException e) {
             System.err.println("[CallService] Erreur notify caller : " + e.getMessage());
-        }
-    }
-
-    private void persistCallNotice(int callerId, String callerPhone, int calleeId, String callType, String action) {
-        String content = "📞 " + action + " (" + callType + ")";
-        Message notice = Message.text(callerId, callerPhone, calleeId, content);
-        int saved = messageDao.save(notice, null);
-        if (saved != -1) {
-            // Also notify the receiver instantly if online²
-            ClientHandler calleeHandler = ChatServer.clients.get(calleeId);
-            if (calleeHandler != null) {
-                try {
-                    calleeHandler.send("text", callerPhone, "", content.getBytes(StandardCharsets.UTF_8));
-                    messageDao.updateEtat(saved, "DELIVERED");
-                } catch (Exception e) {}
-            }
-        } else {
-            System.err.println("[CallService] Impossible de sauvegarder la notification : " + action);
         }
     }
 }

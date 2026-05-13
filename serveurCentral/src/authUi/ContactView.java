@@ -15,16 +15,30 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * ContactView — Gère la liste des contacts dans la sidebar.
+ * Au clic sur un contact, ouvre la ConversationView dans le panneau principal.
+ */
 public class ContactView {
 
-    private final NetworkClient network;
-    private final VBox convList;
-    private final Map<String, HBox> contactRows = new HashMap<>();
+    private final NetworkClient  network;
+    private final JPanel         listPanel;
+
+    // Callback vers ChatView pour ouvrir la conversation
+    private ConversationOpenCallback openCallback;
+
+    public interface ConversationOpenCallback {
+        void openConversation(String phone, String name, String status);
+    }
 
     public interface ConversationOpenCallback {
         void open(String phone, String name, String status);
@@ -41,150 +55,168 @@ public class ContactView {
         this.openCallback = cb;
     }
 
+    public void setConversationOpenCallback(ConversationOpenCallback cb) {
+        this.openCallback = cb;
+    }
+
     public void loadContacts() {
-        client.SocketManager.getInstance().sendBinary("CONTACT_SIGNAL", "", "", "GET_CONTACTS".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        SocketManager.getInstance().sendBinary(
+                "CONTACT_SIGNAL", "", "",
+                "GET_CONTACTS".getBytes(StandardCharsets.UTF_8));
     }
 
     public void updateContacts(String payload) {
-        Platform.runLater(() -> {
-            if (payload == null) return;
+        if (payload == null) return;
 
-            // Gestion des erreurs d'ajout
-            if (payload.startsWith("ADD_FAIL:")) {
-                javafx.scene.control.Alert alert = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.ERROR);
-                alert.setTitle("Erreur d'ajout");
-                alert.setHeaderText(null);
-                if (payload.equals("ADD_FAIL:NOT_FOUND")) {
-                    alert.setContentText("Ce numéro n'existe pas dans la base de données ! Impossible de l'ajouter.");
-                } else if (payload.equals("ADD_FAIL:SELF")) {
-                    alert.setContentText("Vous ne pouvez pas vous ajouter vous-même !");
-                } else {
-                    alert.setContentText("Impossible d'ajouter ce contact pour le moment.");
-                }
-                alert.showAndWait();
-                return;
-            }
-            if (payload.startsWith("ADD_OK:")) {
-                loadContacts();
-                return;
-            }
+        if (payload.startsWith("ADD_FAIL:")) {
+            JOptionPane.showMessageDialog(null,
+                    "Contact introuvable ! Ce numéro n'existe pas.",
+                    "Erreur", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
 
-            if (payload.startsWith("STATUS:")) {
-                String[] parts = payload.substring(7).split(":"); // phone:ONLINE|
-                if (parts.length >= 2) {
-                    String phone = parts[0];
-                    String status = parts[1].replace("|", "");
-                    HBox row = contactRows.get(phone);
-                    if (row != null) {
-                        Label statusLabel = (Label) row.getProperties().get("statusLabel");
-                        if (statusLabel != null) {
-                            if (status.equals("ONLINE") || status.equals("OFFLINE")) {
-                                statusLabel.setText(status.equals("ONLINE") ? "En ligne" : "Hors ligne");
-                                statusLabel.setStyle("-fx-text-fill: " + (status.equals("ONLINE") ? "#25D366" : "gray") + "; -fx-font-size: 12px;");
-                            } else {
-                                statusLabel.setText(status);
-                                statusLabel.setStyle("-fx-text-fill: #a0a0a0; -fx-font-size: 11px;");
-                            }
-                        }
-                    }
-                }
-                return;
-            }
+        listPanel.removeAll();
+// ✅ FIX : gérer le cas où CONTACTS_LIST: est absent (réponse partielle)
+        String data;
+        if (payload.startsWith("CONTACTS_LIST:")) {
+            data = payload.substring("CONTACTS_LIST:".length());
+        } else {
+            data = payload;
+        }
+        if (data.endsWith("|")) data = data.substring(0, data.length() - 1);
 
-            if (!payload.startsWith("CONTACTS_LIST:")) return;
-
-            convList.getChildren().clear();
-            contactRows.clear();
-            String data = payload.substring("CONTACTS_LIST:".length());
-            
-            if (data.trim().isEmpty()) {
-                Label noContacts = new Label("Aucun contact.");
-                noContacts.setStyle("-fx-text-fill: gray; -fx-padding: 15px;");
-                convList.getChildren().add(noContacts);
-                return;
-            }
-
-            // Le serveur utilise "|" pour séparer les lignes et ":" pour séparer les colonnes
-            String[] rows = data.split("\\|");
-            for (String row : rows) {
-                if (row.trim().isEmpty()) continue;
-                String[] parts = row.split(":");
-                if (parts.length >= 3) {
-                    addContactUI(parts[0], parts[1], parts[2]);
-                }
-            }
-        });
-    }
-
-    public void addDynamicContact(String phone, String name, String status) {
-        Platform.runLater(() -> {
-            if (!contactRows.containsKey(phone)) {
-                addContactUI(phone, name, status);
-            }
-        });
-    }
-
-    public void filterContacts(String query) {
-        String normalized = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
-        for (Map.Entry<String, HBox> entry : contactRows.entrySet()) {
-            HBox row = entry.getValue();
-            String searchable = String.valueOf(row.getProperties().getOrDefault("searchText", ""));
-            row.setManaged(normalized.isEmpty() || searchable.contains(normalized));
-            row.setVisible(normalized.isEmpty() || searchable.contains(normalized));
+        if (data.isEmpty()) {
+            listPanel.revalidate();
+            listPanel.repaint();
+            return;
         }
     }
 
-    public boolean hasContactByName(String name) {
-        String cleanName = name.trim().toLowerCase(Locale.ROOT);
-        for (HBox row : contactRows.values()) {
-            String cName = String.valueOf(row.getProperties().getOrDefault("contactName", "")).toLowerCase(Locale.ROOT);
-            if (cName.equals(cleanName)) return true;
+
+        String[] contacts = data.split("\\|");
+        for (String c : contacts) {
+            String[] p = c.split(":");
+            if (p.length < 3) continue;
+            String cPhone  = p[0];
+            String cName   = p[1];
+            String cStatus = p[2];
+            listPanel.add(createItem(cPhone, cName, cStatus));
         }
         return false;
     }
 
-    private void addContactUI(String phone, String name, String status) {
-        HBox item = new HBox(12);
-        item.setPadding(new Insets(12, 15, 12, 15));
-        item.setAlignment(Pos.CENTER_LEFT);
-        item.setStyle("-fx-background-color: #161616; -fx-border-color: #282828; -fx-border-width: 0 0 1 0;");
-        item.setOnMouseEntered(e -> item.setStyle("-fx-background-color: #2a2a2a; -fx-border-color: #282828; -fx-border-width: 0 0 1 0;"));
-        item.setOnMouseExited(e -> item.setStyle("-fx-background-color: #161616; -fx-border-color: #282828; -fx-border-width: 0 0 1 0;"));
-        
-        StackPane avatar = ChatView.buildAvatar(name, 48);
+    private JPanel createItem(String phone, String name, String status) {
+        JPanel item = new JPanel(new BorderLayout());
+        item.setBackground(new Color(30, 30, 30));
+        item.setBorder(BorderFactory.createMatteBorder(
+                0, 0, 1, 0, new Color(45, 45, 45)));
+        item.setMaximumSize(new Dimension(Integer.MAX_VALUE, 72));
+        item.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
-        VBox info = new VBox(2);
-        Label nameLbl = new Label(name);
-        nameLbl.setStyle("-fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 15px;");
-        
-        Label phoneLbl = new Label(phone);
-        phoneLbl.setStyle("-fx-text-fill: gray; -fx-font-size: 11px;");
-        
-        info.getChildren().addAll(nameLbl, phoneLbl);
+        // Avatar
+        JPanel avatarPanel = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(new Color(37, 211, 102));
+                g2.fillOval(8, 8, 38, 38);
+                g2.setColor(Color.WHITE);
+                g2.setFont(new Font("Segoe UI", Font.BOLD, 15));
+                FontMetrics fm = g2.getFontMetrics();
+                String init = name != null && !name.isEmpty()
+                        ? String.valueOf(name.charAt(0)).toUpperCase() : "?";
+                g2.drawString(init, 8 + (38 - fm.stringWidth(init)) / 2,
+                        8 + (38 + fm.getAscent() - fm.getDescent()) / 2);
+                g2.dispose();
+            }
+        };
+        avatarPanel.setOpaque(false);
+        avatarPanel.setPreferredSize(new Dimension(58, 58));
 
-        Label statusLbl = new Label();
-        if (status.equals("ONLINE") || status.equals("OFFLINE")) {
-            statusLbl.setText(status.equals("ONLINE") ? "En ligne" : "Hors ligne");
-            statusLbl.setStyle("-fx-text-fill: " + (status.equals("ONLINE") ? "#25D366" : "gray") + "; -fx-font-size: 12px;");
-        } else {
-            statusLbl.setText(status);
-            statusLbl.setStyle("-fx-text-fill: #a0a0a0; -fx-font-size: 11px;");
-        }
+        // Infos textuelles
+        JLabel nameLabel = new JLabel(name);
+        nameLabel.setForeground(Color.WHITE);
+        nameLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
 
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
+        JLabel phoneLabel = new JLabel(phone);
+        phoneLabel.setForeground(Color.GRAY);
+        phoneLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
 
-        Button btnDelete = new Button("🗑");
-        btnDelete.setStyle("-fx-background-color: transparent; -fx-text-fill: #dc3c3c; -fx-font-size: 16px; -fx-cursor: hand;");
-        btnDelete.setOnAction(e -> {
-            e.consume();
-            SocketManager.getInstance().sendBinary("CONTACT_SIGNAL", "", "", ("REMOVE:" + phone).getBytes(StandardCharsets.UTF_8));
+        JPanel left = new JPanel(new GridLayout(2, 1));
+        left.setOpaque(false);
+        left.setBorder(BorderFactory.createEmptyBorder(10, 5, 10, 5));
+        left.add(nameLabel);
+        left.add(phoneLabel);
+
+        // Statut + bouton supprimer
+        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 18));
+        right.setOpaque(false);
+
+        boolean online = "ONLINE".equals(status);
+        JLabel statusLabel = new JLabel("● " + (online ? "En ligne" : "Hors ligne"));
+        statusLabel.setForeground(online ? new Color(37, 211, 102) : Color.GRAY);
+        statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+
+        JButton btnDelete = new JButton("🗑");
+        btnDelete.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 15));
+        btnDelete.setForeground(Color.DARK_GRAY);
+        btnDelete.setBorderPainted(false);
+        btnDelete.setContentAreaFilled(false);
+        btnDelete.setFocusPainted(false);
+        btnDelete.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        btnDelete.addMouseListener(new MouseAdapter() {
+            public void mouseEntered(MouseEvent e) { btnDelete.setForeground(Color.RED); }
+            public void mouseExited(MouseEvent e)  { btnDelete.setForeground(Color.DARK_GRAY); }
+        });
+        btnDelete.addActionListener(e -> {
+            int confirm = JOptionPane.showConfirmDialog(item,
+                    "Supprimer ce contact ?", "Supprimer", JOptionPane.YES_NO_OPTION);
+            if (confirm == JOptionPane.YES_OPTION) {
+                SocketManager.getInstance().sendBinary(
+                        "CONTACT_SIGNAL", "", "",
+                        ("REMOVE:" + phone).getBytes(StandardCharsets.UTF_8));
+                listPanel.remove(item);
+                listPanel.revalidate();
+                listPanel.repaint();
+            }
         });
 
-        item.getChildren().addAll(avatar, info, statusLbl, spacer, btnDelete);
-        item.setOnMouseClicked(e -> {
-            if (openCallback != null) openCallback.open(phone, name, status);
-        });
+        right.add(statusLabel);
+        right.add(btnDelete);
+
+        item.add(avatarPanel, BorderLayout.WEST);
+        item.add(left,        BorderLayout.CENTER);
+        item.add(right,       BorderLayout.EAST);
+
+        // ── CLIC → ouvre la conversation ──
+        MouseAdapter clickAdapter = new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getSource() == btnDelete) return;
+                if (openCallback != null) {
+                    openCallback.openConversation(phone, name, status);
+                }
+            }
+
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                item.setBackground(new Color(40, 40, 40));
+                left.setBackground(new Color(40, 40, 40));
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+                item.setBackground(new Color(30, 30, 30));
+                left.setBackground(new Color(30, 30, 30));
+            }
+        };
+
+        item.addMouseListener(clickAdapter);
+        avatarPanel.addMouseListener(clickAdapter);
+        nameLabel.addMouseListener(clickAdapter);
+        phoneLabel.addMouseListener(clickAdapter);
 
         item.getProperties().put("statusLabel", statusLbl);
         item.getProperties().put("searchText", (phone + " " + name).toLowerCase(Locale.ROOT));

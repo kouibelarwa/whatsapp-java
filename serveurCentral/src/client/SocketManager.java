@@ -55,8 +55,8 @@ public class SocketManager {
                 while (true) {
                     String type     = binIn.readUTF();
                     String sender   = binIn.readUTF();
-                    String ignored  = binIn.readUTF();
-                    String filename = binIn.readUTF();
+                    String ignored  = binIn.readUTF(); // ✅ receiverPhone (ignoré)
+                    String filename = binIn.readUTF(); // ✅ filename correct
                     int size        = binIn.readInt();
                     byte[] data     = new byte[size];
                     binIn.readFully(data);

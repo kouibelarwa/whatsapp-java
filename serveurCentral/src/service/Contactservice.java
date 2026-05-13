@@ -32,13 +32,20 @@ public class Contactservice {
 
             User target = userDao.searchByPhone(targetPhone);
 
+            // ✅ Empêcher de s'ajouter soi-même
+            if (targetPhone.equals(userPhone)) {
+                sendResponse(handler, "ADD_FAIL:SELF");
+                return;
+            }
+
+            User target = userDao.getByPhone(targetPhone);
+
+            System.out.println("[Contactservice] ADD demandé : " + targetPhone
+                    + " → trouvé : " + (target != null ? target.getId() : "NULL")); // DEBUG
+
             if (target != null) {
                 boolean added = contactDao.addContact(userId, target.getId(), nickname);
-                if (!added) {
-                    sendResponse(handler, "ADD_FAIL:DB");
-                    return;
-                }
-                sendResponse(handler, "ADD_OK:" + targetPhone);
+                System.out.println("[Contactservice] addContact résultat : " + added); // DEBUG
                 handleGet(userId, handler);
             } else {
                 sendResponse(handler, "ADD_FAIL:NOT_FOUND");
@@ -48,11 +55,13 @@ public class Contactservice {
             handleGet(userId, handler);
 
         } else if (payload.startsWith("REMOVE:")) {
-            String targetPhone = normalizePhone(payload.substring(7));
-            User target = userDao.searchByPhone(targetPhone);
+            String targetPhone = payload.substring(7).trim();
+            User target = userDao.getByPhone(targetPhone);
+            System.out.println("[Contactservice] REMOVE demandé : " + targetPhone
+                    + " → trouvé : " + (target != null ? target.getId() : "NULL")); // ✅ debug
             if (target != null) {
-                contactDao.removeContact(userId, target.getId());
-                messageDao.deleteConversation(userId, target.getId());
+                boolean removed = contactDao.removeContact(userId, target.getId());
+                System.out.println("[Contactservice] removeContact résultat : " + removed);
             }
             handleGet(userId, handler);
         }

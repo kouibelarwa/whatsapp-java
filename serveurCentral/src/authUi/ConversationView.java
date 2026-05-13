@@ -5,745 +5,837 @@ import dao.MessageDao;
 import dao.UserDao;
 import model.Message;
 
-import javafx.application.Platform;
-import javafx.geometry.Insets;
-import javafx.geometry.Pos;
-import javafx.scene.control.*;
-import javafx.scene.layout.*;
-import javafx.scene.paint.Color;
-import javafx.scene.text.Font;
-import javafx.scene.text.Text;
-import javafx.scene.text.TextFlow;
-import javafx.stage.FileChooser;
-import javafx.stage.Popup;
-import javafx.stage.Stage;
-import javafx.scene.media.Media;
-import javafx.scene.media.MediaPlayer;
-import javafx.scene.media.MediaView;
-
-import java.awt.Desktop;
-import java.io.File;
-import java.nio.file.Files;
-
+import javax.sound.sampled.*;
+import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import java.awt.*;
+import java.awt.event.*;
+import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-import javax.sound.sampled.*;
+public class ConversationView extends JPanel {
 
-public class ConversationView {
-
-    private final int myUserId;
+    private final int    myUserId;
     private final String myPhone;
     private final String contactPhone;
     private final String contactName;
-    private String contactStatus;
-    private final int contactId;
+    private       String contactStatus;
+    private final int    contactId;
 
-    private BorderPane view;
-    private VBox messagesPanel;
-    private ScrollPane scrollPane;
-    private TextField textField;
-    private Label statusLabel;
-    private Button btnSend;
-    private Button btnAudio;
-    private File pendingAttachment;
-    private String pendingAttachmentType;
+    private JPanel      messagesPanel;
+    private JScrollPane scrollPane;
+    private JTextField  textField;
+    private JLabel      statusLabel;
+    private JButton     btnSend;
+    private JButton     btnAudio;
+    private JLabel      recLabel;
 
-    private Runnable onBack;
-    private Runnable onAudioCall;
-    private Runnable onVideoCall;
+    private TargetDataLine        micLine;
+    private ByteArrayOutputStream audioBuffer;
+    private volatile boolean      recording = false;
+    private Thread                recorderThread;
 
     private final MessageDao messageDao = new MessageDao();
-    private final UserDao userDao = new UserDao();
+    private final UserDao    userDao    = new UserDao();
 
-    // Audio recording fields
-    private TargetDataLine audioLine;
-    private File tempAudioFile;
-    private Thread recordingThread;
-    private boolean isRecording = false;
+    private static final Color BG_DARK        = new Color(11,  20,  14);
+    private static final Color BG_MESSAGES    = new Color(14,  22,  16);
+    private static final Color BG_INPUT       = new Color(21,  30,  24);
+    private static final Color BG_HEADER      = new Color(21,  30,  24);
+    private static final Color BG_INPUT_FIELD = new Color(42,  55,  46);
+    private static final Color COLOR_SENT     = new Color(0,   92,  75);
+    private static final Color COLOR_RECV     = new Color(32,  44,  34);
+    private static final Color COLOR_GREEN    = new Color(37, 211, 102);
+    private static final Color COLOR_RED      = new Color(220,  60,  60);
+    private static final Color COLOR_TEXT     = new Color(230, 230, 230);
+    private static final Color COLOR_TIME     = new Color(150, 150, 150);
 
-    public ConversationView(int myUserId, String myPhone, String contactPhone, String contactName, String contactStatus) {
-        this.myUserId = myUserId;
-        this.myPhone = myPhone;
-        this.contactPhone = contactPhone;
-        this.contactName = contactName != null ? contactName : contactPhone;
+    public ConversationView(int myUserId, String myPhone,
+                            String contactPhone, String contactName,
+                            String contactStatus) {
+        this.myUserId      = myUserId;
+        this.myPhone       = myPhone;
+        this.contactPhone  = contactPhone;
+        this.contactName   = contactName != null ? contactName : contactPhone;
         this.contactStatus = contactStatus != null ? contactStatus : "OFFLINE";
-        
-        if (contactPhone != null && contactPhone.startsWith("GROUP_")) {
-            this.contactId = Integer.parseInt(contactPhone.replace("GROUP_", ""));
-        } else {
-            this.contactId = userDao.getIdByPhone(contactPhone);
-        }
+        this.contactId     = userDao.getIdByPhone(contactPhone);
 
-        buildUI();
-        if (contactId != -1 && !contactPhone.startsWith("GROUP_")) {
-            messageDao.markAllAsRead(contactId, myUserId);
-        }
+        setLayout(new BorderLayout());
+        setBackground(BG_DARK);
+        buildHeader();
+        buildMessages();
+        buildInputBar();
         loadHistory();
+
+        if (contactId != -1) messageDao.markAllAsRead(contactId, myUserId);
+    }
+    private CallView activeCallView = null;
+    // ── HEADER ──────────────────────────────────────────────────
+    private void buildHeader() {
+        JPanel header = new JPanel(new BorderLayout());
+        header.setBackground(BG_HEADER);
+        header.setBorder(new EmptyBorder(10, 14, 10, 14));
+        header.setPreferredSize(new Dimension(0, 64));
+
+        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        left.setOpaque(false);
+        JPanel avatar = buildAvatar(contactName, 42);
+
+        JPanel info = new JPanel();
+        info.setLayout(new BoxLayout(info, BoxLayout.Y_AXIS));
+        info.setOpaque(false);
+
+        JLabel nameLabel = new JLabel(contactName);
+        nameLabel.setForeground(Color.WHITE);
+        nameLabel.setFont(new Font("Segoe UI", Font.BOLD, 15));
+
+        boolean online = "ONLINE".equals(contactStatus);
+        statusLabel = new JLabel("● " + (online ? "En ligne" : "Hors ligne"));
+        statusLabel.setForeground(online ? COLOR_GREEN : new Color(120, 120, 120));
+        statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+
+        info.add(nameLabel);
+        info.add(statusLabel);
+        left.add(avatar);
+        left.add(info);
+
+        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        right.setOpaque(false);
+
+        JButton btnAudioCall = makeHeaderBtn("Tel", "Appel audio");
+        btnAudioCall.addActionListener(e -> startCall("audio"));
+
+        JButton btnVideoCall = makeHeaderBtn("Vid", "Appel video");
+        btnVideoCall.addActionListener(e -> startCall("video"));
+
+        right.add(btnAudioCall);
+        right.add(btnVideoCall);
+
+        header.add(left,  BorderLayout.WEST);
+        header.add(right, BorderLayout.EAST);
+
+        JPanel sep = new JPanel();
+        sep.setBackground(new Color(30, 45, 35));
+        sep.setPreferredSize(new Dimension(0, 1));
+
+        JPanel wrap = new JPanel(new BorderLayout());
+        wrap.setOpaque(false);
+        wrap.add(header, BorderLayout.CENTER);
+        wrap.add(sep,    BorderLayout.SOUTH);
+        add(wrap, BorderLayout.NORTH);
     }
 
-    public void setOnBack(Runnable onBack) {
-        this.onBack = onBack;
+    // ── ZONE DE MESSAGES ─────────────────────────────────────────
+    private void buildMessages() {
+        messagesPanel = new JPanel();
+        messagesPanel.setLayout(new BoxLayout(messagesPanel, BoxLayout.Y_AXIS));
+        messagesPanel.setBackground(BG_MESSAGES);
+        messagesPanel.setBorder(new EmptyBorder(12, 8, 12, 8));
+
+        scrollPane = new JScrollPane(messagesPanel);
+        scrollPane.setBorder(null);
+        scrollPane.setBackground(BG_MESSAGES);
+        scrollPane.getViewport().setBackground(BG_MESSAGES);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        add(scrollPane, BorderLayout.CENTER);
     }
 
-    public void setOnAudioCall(Runnable onAudioCall) {
-        this.onAudioCall = onAudioCall;
-    }
+    // ── BARRE D'ENTRÉE ───────────────────────────────────────────
+    private void buildInputBar() {
+        JPanel inputBar = new JPanel(new BorderLayout(8, 0));
+        inputBar.setBackground(BG_INPUT);
+        inputBar.setBorder(new EmptyBorder(10, 10, 10, 10));
 
-    public void setOnVideoCall(Runnable onVideoCall) {
-        this.onVideoCall = onVideoCall;
-    }
+        // ── Bouton fichier seulement (emoji supprimé) ──
+        JButton btnFile = makeRoundBtn("[F]", "Fichier", 40, BG_INPUT_FIELD);
+        btnFile.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        btnFile.addActionListener(e -> sendFile());
 
-    public BorderPane getView() {
-        return view;
-    }
+        JPanel leftBtns = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        leftBtns.setOpaque(false);
+        leftBtns.add(btnFile);
 
-    private void buildUI() {
-        view = new BorderPane();
-        view.setStyle("-fx-background-color: #0b140e;");
+        // ── Champ de texte ──
+        textField = new JTextField();
+        textField.setBackground(BG_INPUT_FIELD);
+        textField.setForeground(COLOR_TEXT);
+        textField.setCaretColor(Color.WHITE);
+        textField.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(60, 80, 65), 1, true),
+                new EmptyBorder(10, 14, 10, 14)));
+        textField.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        textField.setToolTipText("Ecrire un message...");
+        textField.addActionListener(e -> sendText());
 
-        // Header
-        HBox header = new HBox(15);
-        header.setPadding(new Insets(10, 15, 10, 15));
-        header.setStyle("-fx-background-color: #151e18; -fx-border-color: #1e2d23; -fx-border-width: 0 0 1 0;");
-        header.setAlignment(Pos.CENTER_LEFT);
+        recLabel = new JLabel("  [REC] Enregistrement... cliquez pour envoyer");
+        recLabel.setForeground(COLOR_RED);
+        recLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        recLabel.setVisible(false);
+        recLabel.setBorder(new EmptyBorder(0, 8, 0, 8));
 
-        Button btnBack = new Button("⬅");
-        btnBack.setStyle("-fx-background-color: transparent; -fx-text-fill: white; -fx-font-size: 18px;");
-        btnBack.setOnAction(e -> { if (onBack != null) onBack.run(); });
+        JPanel centerPanel = new JPanel(new BorderLayout(4, 0));
+        centerPanel.setOpaque(false);
+        centerPanel.add(textField, BorderLayout.CENTER);
+        centerPanel.add(recLabel,  BorderLayout.EAST);
 
-        StackPane avatar = ChatView.buildAvatar(contactName, 42);
-
-        VBox info = new VBox();
-        Label nameLbl = new Label(contactName);
-        nameLbl.setStyle("-fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 15px;");
-        statusLabel = new Label("● " + ("ONLINE".equals(contactStatus) ? "En ligne" : "Hors ligne"));
-        statusLabel.setStyle("-fx-text-fill: " + ("ONLINE".equals(contactStatus) ? "#25D366" : "#787878") + "; -fx-font-size: 11px;");
-        info.getChildren().addAll(nameLbl, statusLabel);
-
-        HBox clickableHeader = new HBox(10, avatar, info);
-        clickableHeader.setAlignment(Pos.CENTER_LEFT);
-        clickableHeader.setStyle("-fx-cursor: hand;");
-        clickableHeader.setOnMouseClicked(e -> {
-            if (contactPhone != null && contactPhone.startsWith("GROUP_")) {
-                SocketManager.getInstance().sendBinary("GROUP_SIGNAL", "", "", ("GET_GROUP_INFO:" + contactId).getBytes(StandardCharsets.UTF_8));
-            }
-        });
-
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-
-        Button btnAudioCall = new Button("📞");
-        btnAudioCall.setStyle("-fx-background-color: transparent; -fx-text-fill: white; -fx-font-size: 18px; -fx-cursor: hand;");
-        btnAudioCall.setOnAction(e -> { if (onAudioCall != null) onAudioCall.run(); });
-
-        Button btnVideoCall = new Button("📹");
-        btnVideoCall.setStyle("-fx-background-color: transparent; -fx-text-fill: white; -fx-font-size: 18px; -fx-cursor: hand;");
-        btnVideoCall.setOnAction(e -> { if (onVideoCall != null) onVideoCall.run(); });
-
-        header.getChildren().addAll(btnBack, clickableHeader, spacer, btnAudioCall, btnVideoCall);
-        view.setTop(header);
-
-        // Messages
-        messagesPanel = new VBox(10);
-        messagesPanel.setPadding(new Insets(15));
-        messagesPanel.setStyle("-fx-background-color: #0e1610;");
-
-        scrollPane = new ScrollPane(messagesPanel);
-        scrollPane.setFitToWidth(true);
-        scrollPane.setStyle("-fx-background: #0e1610; -fx-border-color: transparent;");
-        view.setCenter(scrollPane);
-
-        // Input Bar
-        HBox inputBar = new HBox(10);
-        inputBar.setPadding(new Insets(10));
-        inputBar.setStyle("-fx-background-color: #151e18;");
-        inputBar.setAlignment(Pos.CENTER);
-
-        Button btnEmoji = new Button("😊");
-        btnEmoji.setStyle("-fx-background-color: transparent; -fx-text-fill: white; -fx-font-size: 20px; -fx-cursor: hand;");
-        btnEmoji.setOnAction(e -> showEmojiPicker(btnEmoji));
-
-        btnAudio = new Button("🎤");
-        btnAudio.setStyle("-fx-background-color: transparent; -fx-text-fill: white; -fx-font-size: 20px; -fx-cursor: hand;");
-        btnAudio.setOnAction(e -> {
-            if (!isRecording) {
+        // ── Boutons droite ──
+        btnAudio = makeRoundBtn("[M]", "Cliquer pour enregistrer", 44, COLOR_GREEN);
+        btnAudio.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        btnAudio.addActionListener(e -> {
+            if (!recording) {
                 startRecording();
+                btnAudio.setToolTipText("Cliquez pour arreter et envoyer");
             } else {
-                stopRecordingAndSend();
+                stopAndSendRecording();
+                btnAudio.setToolTipText("Cliquer pour enregistrer");
             }
         });
 
-        textField = new TextField();
-        textField.setPromptText("Écrire un message...");
-        textField.setStyle("-fx-background-color: #2a372e; -fx-text-fill: white; -fx-background-radius: 20px;");
-        textField.setPrefHeight(40);
-        HBox.setHgrow(textField, Priority.ALWAYS);
-        textField.setOnAction(e -> sendCurrentPayload());
+        btnSend = makeRoundBtn(">", "Envoyer", 44, COLOR_GREEN);
+        btnSend.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        btnSend.setForeground(Color.WHITE);
+        btnSend.addActionListener(e -> sendText());
+        btnSend.setVisible(false);
 
-        btnSend = new Button("➤");
-        btnSend.setStyle("-fx-background-color: #25D366; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 20px;");
-        btnSend.setPrefHeight(40);
-        btnSend.setPrefWidth(40);
-        btnSend.setOnAction(e -> sendCurrentPayload());
+        textField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            void update() {
+                boolean hasText = !textField.getText().isEmpty();
+                btnSend.setVisible(hasText);
+                btnAudio.setVisible(!hasText);
+            }
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e)  { update(); }
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e)  { update(); }
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { update(); }
+        });
 
-        Button btnFile = new Button("📎");
-        btnFile.setStyle("-fx-background-color: transparent; -fx-text-fill: white; -fx-font-size: 20px; -fx-cursor: hand;");
-        btnFile.setOnAction(e -> pickAttachment());
+        JPanel rightBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+        rightBtns.setOpaque(false);
+        rightBtns.add(btnAudio);
+        rightBtns.add(btnSend);
 
-        // File picker button is kept to the left of text input, audio to right.
-        inputBar.getChildren().addAll(btnEmoji, btnFile, textField, btnAudio, btnSend);
-        view.setBottom(inputBar);
+        inputBar.add(leftBtns,    BorderLayout.WEST);
+        inputBar.add(centerPanel, BorderLayout.CENTER);
+        inputBar.add(rightBtns,   BorderLayout.EAST);
+
+        JPanel sep = new JPanel();
+        sep.setBackground(new Color(30, 45, 35));
+        sep.setPreferredSize(new Dimension(0, 1));
+
+        JPanel wrap = new JPanel(new BorderLayout());
+        wrap.setOpaque(false);
+        wrap.add(sep,      BorderLayout.NORTH);
+        wrap.add(inputBar, BorderLayout.CENTER);
+        add(wrap, BorderLayout.SOUTH);
     }
 
+    // ── HISTORIQUE ───────────────────────────────────────────────
     private void loadHistory() {
         if (contactId == -1) return;
-        List<Message> history;
-        if (contactPhone != null && contactPhone.startsWith("GROUP_")) {
-            history = messageDao.getGroupHistory(contactId);
-        } else {
-            history = messageDao.getConversation(myUserId, contactId);
-        }
-
+        List<Message> history = messageDao.getConversation(myUserId, contactId);
         for (Message m : history) {
             boolean mine = m.getSenderId() == myUserId;
-            String timeStr = formatTime(m.getSentAt());
-            String etat = m.getEtat();
-            String senderPrefix = "";
-            if (!mine && contactPhone != null && contactPhone.startsWith("GROUP_")) {
-                senderPrefix = "~ " + m.getSenderPhone() + "\n";
-            }
-
             if (m.isText()) {
-                addMessageBubble(senderPrefix + m.getContent(), mine, timeStr, etat);
-            } else if ("audio".equals(m.getType())) {
-                byte[] data;
-                if (contactPhone != null && contactPhone.startsWith("GROUP_")) {
-                    data = messageDao.getGroupMessageData(m.getId());
-                } else {
-                    data = messageDao.getDataById(m.getId());
-                }
-                try {
-                    File tempFile = File.createTempFile("history_audio_", ".wav");
-                    Files.write(tempFile.toPath(), data);
-                    addAudioBubble(tempFile, mine, timeStr, etat);
-                } catch (Exception e) {
-                    addMessageBubble("🎵 Message audio", mine, timeStr, etat);
-                }
+                addMessageBubble(m.getContent(), mine, m.getEtat());
             } else {
-                String filename = m.getFilename() != null ? m.getFilename() : "fichier";
-                try {
-                    byte[] binaryData;
-                    if (contactPhone != null && contactPhone.startsWith("GROUP_")) {
-                        binaryData = messageDao.getGroupMessageData(m.getId());
-                    } else {
-                        binaryData = messageDao.getDataById(m.getId());
-                    }
-                    File tempFile = File.createTempFile("history_file_", "_" + filename.replaceAll("[^a-zA-Z0-9._-]", "_"));
-                    Files.write(tempFile.toPath(), binaryData);
-                    addFileBubble(tempFile, filename, m.getType(), mine, timeStr, etat);
-                } catch (Exception e) {
-                    addMessageBubble("📎 " + filename, mine, timeStr, etat);
-                }
+                // ✅ Charger les données binaires depuis la DB
+                byte[] data = messageDao.getDataById(m.getId());
+                addFileBubble(m.getType(), m.getFilename(), mine, m.getEtat(), data);
             }
         }
         scrollToBottom();
     }
 
-    private void sendCurrentPayload() {
-        boolean sentSomething = false;
+    // ── ENVOI TEXTE ──────────────────────────────────────────────
+    private void sendText() {
         String text = textField.getText().trim();
-        if (!text.isEmpty()) {
-            textField.setText("");
-            addMessageBubble(text, true, formatTime(null), "NOT_DELIVERED");
+        if (text.isEmpty()) return;
+        textField.setText("");
+        addMessageBubble(text, true, "SENT");
+        scrollToBottom();
+        new Thread(() ->
+                SocketManager.getInstance().sendBinary(
+                        "text", contactPhone, "", text.getBytes(StandardCharsets.UTF_8))
+        ).start();
+    }
+
+    // ── RÉCEPTION MESSAGE ────────────────────────────────────────
+    public void receiveMessage(String type, String filename, byte[] data) {
+        SwingUtilities.invokeLater(() -> {
+            if ("text".equals(type))
+                addMessageBubble(
+                        new String(data, StandardCharsets.UTF_8), false, "READ");
+            else if ("audio".equals(type))
+                addFileBubble(type, filename, false, "READ", data);
+            else if ("image".equals(type))
+                addFileBubble(type, filename, false, "READ", data);
+            else
+                addFileBubble(type, filename, false, "READ", data);
             scrollToBottom();
-            sentSomething = true;
-            String msgType = (contactPhone != null && contactPhone.startsWith("GROUP_")) ? "GROUP_MSG:text" : "text";
-            new Thread(() -> SocketManager.getInstance().sendBinary(
-                    msgType, contactPhone.replace("GROUP_", ""), "", text.getBytes(StandardCharsets.UTF_8))
-            ).start();
-        }
+            if (contactId != -1)
+                messageDao.markAllAsRead(contactId, myUserId);
+        });
+    }
 
-        if (pendingAttachment != null && pendingAttachment.exists()) {
-            File fileToSend = pendingAttachment;
-            String typeToSend = pendingAttachmentType != null ? pendingAttachmentType : "file";
-            pendingAttachment = null;
-            pendingAttachmentType = null;
-            textField.setPromptText("Écrire un message...");
+    // ── MISE À JOUR STATUT ───────────────────────────────────────
+    public void updateContactStatus(String newStatus) {
+        this.contactStatus = newStatus;
+        if (statusLabel != null) SwingUtilities.invokeLater(() -> {
+            boolean online = "ONLINE".equals(newStatus);
+            statusLabel.setText("● " + (online ? "En ligne" : "Hors ligne"));
+            statusLabel.setForeground(online ? COLOR_GREEN : new Color(120, 120, 120));
+        });
+    }
 
-            try {
-                byte[] data = Files.readAllBytes(fileToSend.toPath());
-                String filename = fileToSend.getName();
-                addFileBubble(fileToSend, filename, typeToSend, true, formatTime(null), "NOT_DELIVERED");
-                scrollToBottom();
-                sentSomething = true;
-                String msgType = (contactPhone != null && contactPhone.startsWith("GROUP_")) ? ("GROUP_MSG:" + typeToSend) : typeToSend;
-                new Thread(() -> SocketManager.getInstance().sendBinary(
-                        msgType, contactPhone.replace("GROUP_", ""), filename, data)
-                ).start();
-            } catch (Exception e) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Erreur lors de l'envoi du fichier : " + e.getMessage());
-                alert.showAndWait();
+    // ── CLEAR MESSAGES ───────────────────────────────────────────
+    public void clearMessages() {
+        SwingUtilities.invokeLater(() -> {
+            messagesPanel.removeAll();
+            messagesPanel.revalidate();
+            messagesPanel.repaint();
+        });
+    }
+
+    // ── BULLE TEXTE ──────────────────────────────────────────────
+    private void addMessageBubble(String text, boolean mine, String etat) {
+        JPanel wrapper = new JPanel(
+                new FlowLayout(mine ? FlowLayout.RIGHT : FlowLayout.LEFT, 6, 3));
+        wrapper.setOpaque(false);
+        wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
+
+        final Color bg = mine ? COLOR_SENT : COLOR_RECV;
+        JPanel bubble = new JPanel() {
+            @Override protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                        RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(bg);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 18, 18);
+                g2.dispose();
+                super.paintComponent(g);
             }
-        }
+        };
+        bubble.setLayout(new BoxLayout(bubble, BoxLayout.Y_AXIS));
+        bubble.setOpaque(false);
+        bubble.setBorder(new EmptyBorder(8, 14, 6, 14));
 
-        if (!sentSomething) {
-            textField.setPromptText("Écrire un message...");
-        }
-    }
+        int maxW = 360;
+        JTextArea ta = new JTextArea(text);
+        ta.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        ta.setForeground(Color.WHITE);
+        ta.setOpaque(false);
+        ta.setEditable(false);
+        ta.setLineWrap(true);
+        ta.setWrapStyleWord(true);
+        ta.setFocusable(false);
+        ta.setBorder(null);
+        ta.setMaximumSize(new Dimension(maxW, Integer.MAX_VALUE));
+        bubble.add(ta);
 
-    private void showEmojiPicker(Button btn) {
-        Popup popup = new Popup();
-        popup.setAutoHide(true);
-        
-        FlowPane pane = new FlowPane();
-        pane.setPrefWidth(200);
-        pane.setVgap(5);
-        pane.setHgap(5);
-        pane.setPadding(new Insets(10));
-        pane.setStyle("-fx-background-color: #2a372e; -fx-border-color: #1e2d23; -fx-border-radius: 5px; -fx-background-radius: 5px;");
-        
-        String[] emojis = {"😊", "😂", "❤️", "😍", "🙏", "👍", "😭", "😘", "🥰", "😎", "🤔", "🙌", "🔥", "💯", "🎉", "✨"};
-        for (String em : emojis) {
-            Button eb = new Button(em);
-            eb.setStyle("-fx-background-color: transparent; -fx-text-fill: white; -fx-font-size: 22px; -fx-cursor: hand; -fx-font-family: 'Segoe UI Emoji';");
-            eb.setOnAction(e -> {
-                textField.appendText(em);
-                popup.hide();
-            });
-            pane.getChildren().add(eb);
-        }
-        
-        popup.getContent().add(pane);
-        
-        // Afficher au-dessus du bouton
-        javafx.geometry.Point2D point = btn.localToScreen(0, 0);
-        if (point != null) {
-            popup.show(btn, point.getX(), point.getY() - 150);
-        }
-    }
+        JPanel timeRow = new JPanel(
+                new FlowLayout(mine ? FlowLayout.RIGHT : FlowLayout.LEFT, 3, 0));
+        timeRow.setOpaque(false);
+        java.time.LocalTime now = java.time.LocalTime.now();
+        JLabel timeLabel = new JLabel(
+                String.format("%02d:%02d", now.getHour(), now.getMinute()));
+        timeLabel.setForeground(COLOR_TIME);
+        timeLabel.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+        timeRow.add(timeLabel);
 
-    private void pickAttachment() {
-        FileChooser fileChooser = new FileChooser();
-        fileChooser.setTitle("Sélectionner un fichier");
-        File file = fileChooser.showOpenDialog(view.getScene().getWindow());
-        
-        if (file != null) {
-            pendingAttachment = file;
-            pendingAttachmentType = isVideoFile(file.getName()) ? "video" : "file";
-            textField.setPromptText("Fichier sélectionné: " + file.getName() + " (cliquez sur ➤ pour envoyer)");
-        }
-    }
-
-    private void startRecording() {
-        try {
-            AudioFormat format = new AudioFormat(16000, 16, 1, true, true);
-            DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);
-
-            if (!AudioSystem.isLineSupported(info)) {
-                System.out.println("Microphone non supporté !");
-                return;
+        if (mine) {
+            String tick; Color col;
+            switch (etat != null ? etat : "SENT") {
+                case "READ":      tick = "vv"; col = new Color(83, 182, 255); break;
+                case "DELIVERED": tick = "vv"; col = Color.LIGHT_GRAY;        break;
+                default:          tick = "v";  col = Color.GRAY;              break;
             }
+            JLabel tickLabel = new JLabel(tick);
+            tickLabel.setForeground(col);
+            tickLabel.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+            timeRow.add(tickLabel);
+        }
+        bubble.add(timeRow);
+        wrapper.add(bubble);
+        messagesPanel.add(wrapper);
+        messagesPanel.add(Box.createVerticalStrut(2));
+        messagesPanel.revalidate();
+        messagesPanel.repaint();
+    }
 
-            audioLine = (TargetDataLine) AudioSystem.getLine(info);
-            audioLine.open(format);
-            audioLine.start();
-            isRecording = true;
-            btnAudio.setStyle("-fx-background-color: #dc3c3c; -fx-text-fill: white; -fx-font-size: 20px; -fx-background-radius: 50%;");
+    // ── BULLE FICHIER ✅ CORRIGÉE ────────────────────────────────
+    private void addFileBubble(String type, String filename,
+                               boolean mine, String etat, byte[] fileData) {
+        if ("audio".equals(type)) {
+            addAudioBubble(filename, mine, etat, fileData);
+            return;
+        }
 
-            tempAudioFile = File.createTempFile("voice_note", ".wav");
-            
-            recordingThread = new Thread(() -> {
-                try {
-                    AudioInputStream ais = new AudioInputStream(audioLine);
-                    AudioSystem.write(ais, AudioFileFormat.Type.WAVE, tempAudioFile);
-                } catch (Exception ex) {
-                    ex.printStackTrace();
+        // Icône texte selon type
+        String icon;
+        switch (type != null ? type : "") {
+            case "video":
+                icon = "[Video]";
+                break;
+            case "image":
+                icon = "[Image]";
+                break;
+            default:
+                icon = "[Fichier]";
+                break;
+        }
+
+        JPanel wrapper = new JPanel(
+                new FlowLayout(mine ? FlowLayout.RIGHT : FlowLayout.LEFT, 6, 3));
+        wrapper.setOpaque(false);
+        wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
+
+        final Color bg = mine ? COLOR_SENT : COLOR_RECV;
+        JPanel bubble = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                        RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(bg);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 18, 18);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        bubble.setLayout(new BoxLayout(bubble, BoxLayout.Y_AXIS));
+        bubble.setOpaque(false);
+        bubble.setBorder(new EmptyBorder(10, 14, 8, 14));
+
+        // Nom du fichier
+        JLabel nameLabel = new JLabel(icon + " " + (filename != null ? filename : type));
+        nameLabel.setForeground(Color.WHITE);
+        nameLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        bubble.add(nameLabel);
+
+        // ✅ Bouton telecharger si données disponibles
+        if (fileData != null && fileData.length > 0) {
+            JButton btnDl = new JButton("Telecharger");
+            btnDl.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            btnDl.setForeground(Color.WHITE);
+            btnDl.setBackground(new Color(0, 120, 100));
+            btnDl.setBorderPainted(false);
+            btnDl.setFocusPainted(false);
+            btnDl.setOpaque(true);
+            btnDl.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            final byte[] dataToSave = fileData;
+            final String fname = filename;
+            btnDl.addActionListener(e -> {
+                JFileChooser chooser = new JFileChooser();
+                chooser.setSelectedFile(new File(fname != null ? fname : "fichier"));
+                if (chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+                    try {
+                        java.nio.file.Files.write(
+                                chooser.getSelectedFile().toPath(), dataToSave);
+                        JOptionPane.showMessageDialog(this, "Fichier sauvegarde !");
+                    } catch (IOException ex) {
+                        JOptionPane.showMessageDialog(this,
+                                "Erreur : " + ex.getMessage());
+                    }
                 }
             });
-            recordingThread.start();
-            
-            textField.setPromptText("🎙️ Enregistrement en cours... (Cliquez pour envoyer)");
-            textField.setDisable(true);
-
-        } catch (Exception ex) {
-            ex.printStackTrace();
+            bubble.add(Box.createVerticalStrut(6));
+            bubble.add(btnDl);
         }
+
+        // Heure
+        JPanel timeRow = new JPanel(
+                new FlowLayout(mine ? FlowLayout.RIGHT : FlowLayout.LEFT, 3, 0));
+        timeRow.setOpaque(false);
+        java.time.LocalTime now = java.time.LocalTime.now();
+        JLabel tl = new JLabel(String.format("%02d:%02d", now.getHour(), now.getMinute()));
+        tl.setForeground(COLOR_TIME);
+        tl.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+        timeRow.add(tl);
+        bubble.add(timeRow);
+
+        wrapper.add(bubble);
+        messagesPanel.add(wrapper);
+        messagesPanel.add(Box.createVerticalStrut(2));
+        messagesPanel.revalidate();
+        messagesPanel.repaint();
     }
 
-    private void stopRecordingAndSend() {
-        if (!isRecording) return;
-        isRecording = false;
-        
-        btnAudio.setStyle("-fx-background-color: transparent; -fx-text-fill: white; -fx-font-size: 20px; -fx-cursor: hand;");
-        textField.setPromptText("Écrire un message...");
-        textField.setDisable(false);
-        
-        if (audioLine != null) {
-            audioLine.stop();
-            audioLine.close();
-        }
-        
-        try {
-            if (tempAudioFile != null && tempAudioFile.exists()) {
-                // Attendre un tout petit peu pour s'assurer que le fichier est bien écrit
-                Thread.sleep(200);
-                byte[] data = Files.readAllBytes(tempAudioFile.toPath());
-                String filename = "vocal_" + System.currentTimeMillis() + ".wav";
-                
-                Platform.runLater(() -> {
-                    addAudioBubble(tempAudioFile, true, formatTime(null), "NOT_DELIVERED");
-                    scrollToBottom();
-                });
-                
-                String msgType = (contactPhone != null && contactPhone.startsWith("GROUP_")) ? "GROUP_MSG:audio" : "audio";
-                new Thread(() -> SocketManager.getInstance().sendBinary(
-                        msgType, contactPhone.replace("GROUP_", ""), filename, data)
-                ).start();
-            }
-        } catch (Exception ex) {
-            ex.printStackTrace();
-        }
-    }
+    // ── BULLE AUDIO ──────────────────────────────────────────────
+    private void addAudioBubble(String filename, boolean mine,
+                                String etat, byte[] audioData) {
+        JPanel wrapper = new JPanel(
+                new FlowLayout(mine ? FlowLayout.RIGHT : FlowLayout.LEFT, 6, 3));
+        wrapper.setOpaque(false);
+        wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
 
-    public void receiveMessage(String type, String filename, byte[] data, String senderPhoneForUi) {
-        Platform.runLater(() -> {
-            String timeStr = formatTime(null);
-            
-            String senderPrefix = "";
-            if (senderPhoneForUi != null && contactPhone != null && contactPhone.startsWith("GROUP_") && !senderPhoneForUi.equals(myPhone)) {
-                senderPrefix = "~ " + senderPhoneForUi + "\n";
+        final Color bg = mine ? COLOR_SENT : COLOR_RECV;
+        JPanel bubble = new JPanel() {
+            @Override protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                        RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(bg);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 18, 18);
+                g2.dispose();
+                super.paintComponent(g);
             }
+        };
+        bubble.setLayout(new BoxLayout(bubble, BoxLayout.Y_AXIS));
+        bubble.setOpaque(false);
+        bubble.setBorder(new EmptyBorder(10, 14, 8, 14));
 
-            if ("text".equals(type)) {
-                addMessageBubble(senderPrefix + new String(data, StandardCharsets.UTF_8), false, timeStr, "READ");
-            } else if ("audio".equals(type)) {
-                try {
-                    File tempFile = File.createTempFile("received_audio_", ".wav");
-                    Files.write(tempFile.toPath(), data);
-                    addAudioBubble(tempFile, false, timeStr, "READ");
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            } else if ("video".equals(type) || "file".equals(type) || "image".equals(type)) {
-                try {
-                    String safeName = (filename == null || filename.isBlank()) ? ("incoming_" + System.currentTimeMillis()) : filename;
-                    File tempFile = File.createTempFile("received_", "_" + safeName.replaceAll("[^a-zA-Z0-9._-]", "_"));
-                    Files.write(tempFile.toPath(), data);
-                    addFileBubble(tempFile, safeName, type, false, timeStr, "READ");
-                } catch (Exception e) {
-                    String label = "video".equals(type) ? "🎬 Vidéo reçue" : "📎 Fichier reçu";
-                    addMessageBubble(label + " (" + (data.length/1024) + " KB)", false, timeStr, "READ");
-                }
+        JPanel audioRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        audioRow.setOpaque(false);
+
+        JButton playBtn = new JButton("Play");
+        playBtn.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        playBtn.setForeground(Color.WHITE);
+        playBtn.setBackground(COLOR_GREEN);
+        playBtn.setPreferredSize(new Dimension(55, 36));
+        playBtn.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
+        playBtn.setFocusPainted(false);
+        playBtn.setOpaque(true);
+        playBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        WavePanel wavePanel = new WavePanel();
+
+        int secs = audioData != null
+                ? Math.max(1, (audioData.length - 44) / (44100 * 2)) : 5;
+        JLabel durLabel = new JLabel("0:" + String.format("%02d", secs));
+        durLabel.setForeground(COLOR_TIME);
+        durLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+
+        playBtn.addActionListener(e -> {
+            if (audioData != null && audioData.length > 44) {
+                playAudioBytes(audioData, playBtn, wavePanel);
             } else {
-
-                addMessageBubble("📎 Message reçu (" + type + ")", false, timeStr, "READ");
-            }
-            scrollToBottom();
-            if (contactId != -1) messageDao.markAllAsRead(contactId, myUserId);
-        });
-    }
-
-    private boolean isVideoFile(String filename) {
-        String lower = filename == null ? "" : filename.toLowerCase();
-        return lower.endsWith(".mp4")
-                || lower.endsWith(".m4v")
-                || lower.endsWith(".mov")
-                || lower.endsWith(".avi")
-                || lower.endsWith(".mkv")
-                || lower.endsWith(".wmv")
-                || lower.endsWith(".webm");
-    }
-
-    private String formatTime(java.sql.Timestamp ts) {
-        if (ts == null) return new java.text.SimpleDateFormat("HH:mm").format(new java.util.Date());
-        return new java.text.SimpleDateFormat("HH:mm").format(ts);
-    }
-
-    private Label createTimeLabel(String timeStr, String etat, boolean mine) {
-        String text = timeStr;
-        if (mine && etat != null) {
-            text += "READ".equals(etat) ? " ✓✓" : ("DELIVERED".equals(etat) ? " ✓✓" : " ✓");
-        }
-        Label timeLabel = new Label(text);
-        String color = (mine && "READ".equals(etat)) ? "#53bdeb" : "#969696";
-        timeLabel.setStyle("-fx-text-fill: " + color + "; -fx-font-size: 10px;");
-        timeLabel.setAlignment(Pos.CENTER_RIGHT);
-        return timeLabel;
-    }
-
-    private void addAudioBubble(File audioFile, boolean mine, String timeStr, String etat) {
-        HBox wrapper = new HBox();
-        wrapper.setAlignment(mine ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
-
-        VBox bubble = new VBox(5);
-        bubble.setPadding(new Insets(10, 15, 10, 15));
-        bubble.setStyle("-fx-background-color: " + (mine ? "#005c4b" : "#202c22") + "; -fx-background-radius: 15px;");
-        bubble.setMaxWidth(400);
-
-        HBox audioPlayer = new HBox(10);
-        audioPlayer.setAlignment(Pos.CENTER_LEFT);
-        
-        Button btnPlay = new Button("▶");
-        btnPlay.setStyle("-fx-background-color: #25D366; -fx-text-fill: white; -fx-background-radius: 50%;");
-        
-        Label lblDuration = new Label("Audio (" + (audioFile.length() / 1024) + " KB)");
-        lblDuration.setStyle("-fx-text-fill: white;");
-
-        btnPlay.setOnAction(e -> {
-            try {
-                AudioInputStream audioIn = AudioSystem.getAudioInputStream(audioFile);
-                Clip clip = AudioSystem.getClip();
-                clip.open(audioIn);
-                clip.start();
-            } catch (Exception ex) {
-                ex.printStackTrace();
-            }
-        });
-
-        audioPlayer.getChildren().addAll(btnPlay, lblDuration);
-
-        Label timeLabel = createTimeLabel(timeStr, etat, mine);
-
-        bubble.getChildren().addAll(audioPlayer, timeLabel);
-        wrapper.getChildren().add(bubble);
-        messagesPanel.getChildren().add(wrapper);
-    }
-
-    private void addFileBubble(File localFile, String filename, String type, boolean mine, String timeStr, String etat) {
-        HBox wrapper = new HBox();
-        wrapper.setAlignment(mine ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
-
-        VBox bubble = new VBox(8);
-        bubble.setPadding(new Insets(10, 15, 10, 15));
-        bubble.setStyle("-fx-background-color: " + (mine ? "#005c4b" : "#202c22") + "; -fx-background-radius: 15px;");
-        bubble.setMaxWidth(460);
-
-        Label fileLabel = new Label((isVideoFile(filename) ? "🎬 " : "📎 ") + filename);
-        fileLabel.setWrapText(true);
-        fileLabel.setStyle("-fx-text-fill: white; -fx-font-size: 13px;");
-
-        Label sizeLabel = new Label((localFile.length() / 1024) + " KB");
-        sizeLabel.setStyle("-fx-text-fill: #c9c9c9; -fx-font-size: 11px;");
-
-        HBox actions = new HBox(8);
-        Button openBtn = new Button(isVideoFile(filename) ? "Lire" : "Ouvrir");
-        openBtn.setStyle("-fx-background-color: #25D366; -fx-text-fill: #0f0f0f; -fx-font-weight: bold;");
-        openBtn.setOnAction(e -> {
-            try {
-                if ("video".equals(type) || isVideoFile(filename)) {
-                    playVideoInApp(localFile, filename);
-                } else if (Desktop.isDesktopSupported()) {
-                    Desktop.getDesktop().open(localFile);
-                }
-            } catch (Exception ex) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Impossible d'ouvrir le fichier.");
-                alert.showAndWait();
-            }
-        });
-
-        Button downloadBtn = new Button("Télécharger");
-        downloadBtn.setStyle("-fx-background-color: #303030; -fx-text-fill: white;");
-        downloadBtn.setOnAction(e -> downloadFile(localFile, filename));
-        actions.getChildren().addAll(openBtn, downloadBtn);
-
-        Label timeLabel = createTimeLabel(timeStr, etat, mine);
-
-        bubble.getChildren().addAll(fileLabel, sizeLabel, actions, timeLabel);
-        wrapper.getChildren().add(bubble);
-        messagesPanel.getChildren().add(wrapper);
-    }
-
-    private void downloadFile(File source, String filename) {
-        FileChooser chooser = new FileChooser();
-        chooser.setTitle("Télécharger");
-        chooser.setInitialFileName(filename);
-        File target = chooser.showSaveDialog(view.getScene().getWindow());
-        if (target == null) return;
-        try {
-            Files.copy(source.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        } catch (Exception e) {
-            Alert alert = new Alert(Alert.AlertType.ERROR, "Erreur lors du téléchargement.");
-            alert.showAndWait();
-        }
-    }
-
-    private void playVideoInApp(File file, String title) {
-        Stage stage = new Stage();
-        Media media = new Media(file.toURI().toString());
-        MediaPlayer player = new MediaPlayer(media);
-        MediaView mediaView = new MediaView(player);
-        mediaView.setFitWidth(640);
-        mediaView.setFitHeight(400);
-        mediaView.setPreserveRatio(true);
-
-        Button playPause = new Button("⏯");
-        playPause.setOnAction(e -> {
-            MediaPlayer.Status status = player.getStatus();
-            if (status == MediaPlayer.Status.PLAYING) player.pause();
-            else player.play();
-        });
-
-        VBox root = new VBox(10, mediaView, playPause);
-        root.setPadding(new Insets(12));
-        root.setAlignment(Pos.CENTER);
-        stage.setTitle("Lecture vidéo - " + title);
-        stage.setScene(new javafx.scene.Scene(root, 700, 500));
-        stage.show();
-        player.play();
-        stage.setOnCloseRequest(e -> player.dispose());
-    }
-
-    private void addMessageBubble(String text, boolean mine, String timeStr, String etat) {
-        HBox wrapper = new HBox();
-        wrapper.setAlignment(mine ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
-
-        VBox bubble = new VBox(5);
-        bubble.setPadding(new Insets(10, 15, 10, 15));
-        bubble.setStyle("-fx-background-color: " + (mine ? "#005c4b" : "#202c22") + "; -fx-background-radius: 15px;");
-        bubble.setMaxWidth(400);
-
-        TextFlow textFlow = new TextFlow();
-        Text msgText = new Text(text);
-        msgText.setFill(Color.WHITE);
-        msgText.setFont(Font.font("Segoe UI Emoji", 14));
-        textFlow.getChildren().add(msgText);
-
-        Label timeLabel = createTimeLabel(timeStr, etat, mine);
-
-        bubble.getChildren().addAll(textFlow, timeLabel);
-        wrapper.getChildren().add(bubble);
-
-        messagesPanel.getChildren().add(wrapper);
-    }
-
-    private void scrollToBottom() {
-        Platform.runLater(() -> scrollPane.setVvalue(1.0));
-    }
-
-    public int getContactId() {
-        return contactId;
-    }
-
-    private Dialog<Void> currentGroupDialog;
-
-    public void showGroupInfoDialog(String payload) {
-        Platform.runLater(() -> {
-            if (currentGroupDialog != null && currentGroupDialog.isShowing()) {
-                currentGroupDialog.close();
-            }
-
-            // payload format: GROUP_INFO_REPLY:groupId|id:phone:username:isAdmin:isOnline;id:phone...
-            String dataPart = payload.substring(payload.indexOf("|") + 1);
-            String[] members = dataPart.split(";");
-
-            boolean amIAdmin = false;
-            for (String m : members) {
-                if (m.isEmpty()) continue;
-                String[] parts = m.split(":");
-                if (Integer.parseInt(parts[0]) == myUserId) {
-                    amIAdmin = Boolean.parseBoolean(parts[3]);
-                    break;
-                }
-            }
-
-            Dialog<Void> dialog = new Dialog<>();
-            dialog.setTitle("Infos du Groupe - " + contactName);
-            dialog.setHeaderText("Membres du groupe");
-            
-            VBox list = new VBox(10);
-            list.setPadding(new Insets(10));
-            list.setStyle("-fx-background-color: #121212;");
-
-            for (String m : members) {
-                if (m.isEmpty()) continue;
-                String[] parts = m.split(":");
-                int mId = Integer.parseInt(parts[0]);
-                String mPhone = parts[1];
-                String mName = parts[2];
-                boolean isAdmin = Boolean.parseBoolean(parts[3]);
-                String onlineStatus = parts[4];
-
-                HBox row = new HBox(10);
-                row.setAlignment(Pos.CENTER_LEFT);
-                row.setPadding(new Insets(5));
-                row.setStyle("-fx-border-color: #282828; -fx-border-width: 0 0 1 0;");
-
-                VBox details = new VBox(2);
-                String displayName = (mId == myUserId) ? "Vous" : mName;
-                Label nameLbl = new Label(displayName + (isAdmin ? " (Admin)" : ""));
-                nameLbl.setStyle("-fx-text-fill: white; -fx-font-weight: bold;");
-                Label statLbl = new Label("ONLINE".equals(onlineStatus) ? "En ligne" : "Hors ligne");
-                statLbl.setStyle("-fx-text-fill: " + ("ONLINE".equals(onlineStatus) ? "#25D366" : "gray") + "; -fx-font-size: 11px;");
-                details.getChildren().addAll(nameLbl, statLbl);
-
-                Region spacer = new Region();
-                HBox.setHgrow(spacer, Priority.ALWAYS);
-
-                row.getChildren().addAll(ChatView.buildAvatar(mName, 36), details, spacer);
-
-                if (amIAdmin && mId != myUserId) {
-                    Button btnRemove = new Button("Retirer");
-                    btnRemove.setStyle("-fx-background-color: transparent; -fx-text-fill: #dc3c3c;");
-                    btnRemove.setOnAction(e -> {
-                        SocketManager.getInstance().sendBinary("GROUP_SIGNAL", "", "", ("REMOVE_GROUP_MEMBER:" + contactId + ":" + mId).getBytes(StandardCharsets.UTF_8));
+                playBtn.setEnabled(false);
+                new Thread(() -> {
+                    for (int i = 0; i < 12; i++) {
+                        final int idx = i;
+                        SwingUtilities.invokeLater(() -> wavePanel.setActive(idx));
+                        try { Thread.sleep(200); }
+                        catch (InterruptedException ignored) {}
+                    }
+                    SwingUtilities.invokeLater(() -> {
+                        playBtn.setText("Play");
+                        playBtn.setEnabled(true);
+                        wavePanel.setActive(-1);
                     });
-                    row.getChildren().add(btnRemove);
-
-                    if (!isAdmin) {
-                        Button btnPromote = new Button("Promouvoir");
-                        btnPromote.setStyle("-fx-background-color: transparent; -fx-text-fill: #25D366;");
-                        btnPromote.setOnAction(e -> {
-                            SocketManager.getInstance().sendBinary("GROUP_SIGNAL", "", "", ("PROMOTE_ADMIN:" + contactId + ":" + mId).getBytes(StandardCharsets.UTF_8));
-                        });
-                        row.getChildren().add(btnPromote);
-                    }
-                }
-                list.getChildren().add(row);
+                }).start();
             }
-
-            VBox layout = new VBox(15, list);
-            
-            if (amIAdmin) {
-                Button btnAdd = new Button("+ Ajouter un membre");
-                btnAdd.setStyle("-fx-background-color: #25D366; -fx-text-fill: white; -fx-font-weight: bold;");
-                btnAdd.setOnAction(e -> {
-                    TextInputDialog d = new TextInputDialog();
-                    d.setTitle("Ajouter un membre");
-                    d.setHeaderText("Nom du contact à ajouter :");
-                    java.util.Optional<String> res = d.showAndWait();
-                    if (res.isPresent() && !res.get().trim().isEmpty()) {
-                        SocketManager.getInstance().sendBinary("GROUP_SIGNAL", "", "", ("ADD_GROUP_MEMBER:" + contactId + ":" + res.get().trim()).getBytes(StandardCharsets.UTF_8));
-                    }
-                });
-                layout.getChildren().add(0, btnAdd); // au dessus
-            }
-
-            Button btnLeave = new Button("🚪 Quitter le groupe");
-            btnLeave.setStyle("-fx-background-color: transparent; -fx-text-fill: #dc3c3c; -fx-border-color: #dc3c3c; -fx-border-radius: 5;");
-            btnLeave.setOnAction(e -> {
-                Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, "Voulez-vous vraiment quitter ce groupe ?");
-                confirm.showAndWait().ifPresent(response -> {
-                    if (response == ButtonType.OK) {
-                        dialog.close();
-                        if (onBack != null) onBack.run();
-                        SocketManager.getInstance().sendBinary("GROUP_SIGNAL", "", "", ("LEAVE_GROUP:" + contactId).getBytes(StandardCharsets.UTF_8));
-                    }
-                });
-            });
-            layout.getChildren().add(btnLeave);
-
-            ScrollPane scrollPane = new ScrollPane(layout);
-            scrollPane.setStyle("-fx-background: #121212; -fx-border-color: transparent;");
-            scrollPane.setFitToWidth(true);
-            scrollPane.setPrefViewportHeight(400);
-
-            dialog.getDialogPane().setContent(scrollPane);
-            dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
-            dialog.getDialogPane().setStyle("-fx-background-color: #121212;");
-
-            currentGroupDialog = dialog;
-            dialog.show();
         });
+
+        audioRow.add(playBtn);
+        audioRow.add(wavePanel);
+        audioRow.add(durLabel);
+        bubble.add(audioRow);
+
+        JPanel timeRow = new JPanel(
+                new FlowLayout(mine ? FlowLayout.RIGHT : FlowLayout.LEFT, 3, 0));
+        timeRow.setOpaque(false);
+        java.time.LocalTime now = java.time.LocalTime.now();
+        JLabel tl = new JLabel(String.format("%02d:%02d", now.getHour(), now.getMinute()));
+        tl.setForeground(COLOR_TIME);
+        tl.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+        timeRow.add(tl);
+        bubble.add(timeRow);
+
+        wrapper.add(bubble);
+        messagesPanel.add(wrapper);
+        messagesPanel.add(Box.createVerticalStrut(2));
+        messagesPanel.revalidate();
+        messagesPanel.repaint();
+    }
+
+    private void playAudioBytes(byte[] wavData, JButton playBtn, WavePanel wavePanel) {
+        new Thread(() -> {
+            try {
+                SwingUtilities.invokeLater(() -> {
+                    playBtn.setText("Stop");
+                    playBtn.setEnabled(false);
+                });
+                AudioInputStream ais = AudioSystem.getAudioInputStream(
+                        new BufferedInputStream(new ByteArrayInputStream(wavData)));
+                Clip clip = AudioSystem.getClip();
+                clip.open(ais);
+                long stepMs = Math.max(clip.getMicrosecondLength() / 1000 / 12, 80);
+                clip.start();
+                for (int i = 0; i < 12; i++) {
+                    final int idx = i;
+                    SwingUtilities.invokeLater(() -> wavePanel.setActive(idx));
+                    Thread.sleep(stepMs);
+                }
+                clip.drain();
+                clip.close();
+                SwingUtilities.invokeLater(() -> {
+                    playBtn.setText("Play");
+                    playBtn.setEnabled(true);
+                    wavePanel.setActive(-1);
+                });
+            } catch (Exception e) {
+                e.printStackTrace();
+                SwingUtilities.invokeLater(() -> {
+                    playBtn.setText("Play");
+                    playBtn.setEnabled(true);
+                });
+            }
+        }, "AudioPlayer").start();
+    }
+
+    // ── ENREGISTREMENT AUDIO ─────────────────────────────────────
+    private void startRecording() {
+        AudioFormat fmt = new AudioFormat(44100, 16, 1, true, false);
+        DataLine.Info info = new DataLine.Info(TargetDataLine.class, fmt);
+
+        if (!AudioSystem.isLineSupported(info)) {
+            JOptionPane.showMessageDialog(this,
+                    "Microphone non disponible !",
+                    "Microphone", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        try {
+            micLine = (TargetDataLine) AudioSystem.getLine(info);
+            micLine.open(fmt);
+            micLine.start();
+        } catch (LineUnavailableException ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Impossible d'acceder au microphone : " + ex.getMessage(),
+                    "Erreur micro", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        audioBuffer = new ByteArrayOutputStream();
+        recording   = true;
+
+        SwingUtilities.invokeLater(() -> {
+            btnAudio.setBackground(COLOR_RED);
+            btnAudio.setText("[STOP]");
+            recLabel.setVisible(true);
+        });
+
+        recorderThread = new Thread(() -> {
+            byte[] buf = new byte[4096];
+            while (recording) {
+                int n = micLine.read(buf, 0, buf.length);
+                if (n > 0) audioBuffer.write(buf, 0, n);
+            }
+        }, "AudioRecorder");
+        recorderThread.setDaemon(true);
+        recorderThread.start();
+    }
+
+    private void stopAndSendRecording() {
+        if (!recording) return;
+        recording = false;
+
+        if (micLine != null) {
+            micLine.stop();
+            micLine.drain();
+            micLine.close();
+        }
+        if (recorderThread != null) {
+            try { recorderThread.join(1000); }
+            catch (InterruptedException ignored) {}
+        }
+
+        SwingUtilities.invokeLater(() -> {
+            btnAudio.setBackground(COLOR_GREEN);
+            btnAudio.setText("[M]");
+            recLabel.setVisible(false);
+        });
+
+        byte[] rawPCM = audioBuffer != null ? audioBuffer.toByteArray() : new byte[0];
+
+        // ✅ Minimum 0.1 seconde
+        if (rawPCM.length < 8820) {
+            JOptionPane.showMessageDialog(this,
+                    "Enregistrement trop court !\nCliquez pour demarrer, recliquez pour arreter.",
+                    "Trop court", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        byte[] wavData = pcmToWav(rawPCM, 44100, 1, 16);
+        String fname   = "audio_" + System.currentTimeMillis() + ".wav";
+
+        addAudioBubble(fname, true, "SENT", wavData);
+        scrollToBottom();
+        new Thread(() ->
+                SocketManager.getInstance().sendBinary("audio", contactPhone, fname, wavData)
+        ).start();
+    }
+
+    // ── ENVOI FICHIER ✅ CORRIGÉ ─────────────────────────────────
+    private void sendFile() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Choisir un fichier a envoyer");
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        File file = chooser.getSelectedFile();
+        if (file.length() > 50L * 1024 * 1024) {
+            JOptionPane.showMessageDialog(this,
+                    "Fichier trop grand (limite 50 Mo) !");
+            return;
+        }
+        try {
+            byte[] data = java.nio.file.Files.readAllBytes(file.toPath());
+            String name = file.getName();
+            String type = detectType(name);
+            // ✅ FIX : toujours passer data, jamais null
+            addFileBubble(type, name, true, "SENT", data);
+            scrollToBottom();
+            new Thread(() ->
+                    SocketManager.getInstance().sendBinary(type, contactPhone, name, data)
+            ).start();
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(this, "Erreur : " + e.getMessage());
+        }
+    }
+
+    private String detectType(String name) {
+        String low = name.toLowerCase();
+        if (low.matches(".*\\.(mp3|wav|ogg|aac|m4a)$"))       return "audio";
+        if (low.matches(".*\\.(mp4|avi|mkv|mov|wmv)$"))       return "video";
+        if (low.matches(".*\\.(jpg|jpeg|png|gif|bmp|webp)$")) return "image";
+        return "file";
+    }
+
+    // ── APPEL ────────────────────────────────────────────────────
+    private void startCall(String callType) {
+
+        // Si appel déjà en cours, ignorer
+        if (activeCallView != null && activeCallView.isVisible()) {
+            JOptionPane.showMessageDialog(this,
+                    "Un appel est déjà en cours !",
+                    "Appel en cours", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        // Nettoyer l'ancien proprement
+        if (activeCallView != null) {
+            activeCallView.forceStop();
+            activeCallView = null;
+        }
+
+        // Envoyer signal au serveur
+        SocketManager.getInstance().sendBinary(
+                "CALL_SIGNAL", contactPhone, "",
+                ("CALL_REQUEST:" + contactPhone)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        Frame parent = (Frame) SwingUtilities.getWindowAncestor(this);
+
+        activeCallView = new CallView(
+                parent, contactName, contactPhone, callType, false,
+                () -> {
+                    SocketManager.getInstance().sendBinary(
+                            "CALL_SIGNAL", contactPhone, "",
+                            ("CALL_END:" + contactPhone)
+                                    .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    activeCallView = null;
+                });
+
+        SwingUtilities.invokeLater(() -> activeCallView.setVisible(true));
+    }
+
+    // ── UTILITAIRES ──────────────────────────────────────────────
+    private void scrollToBottom() {
+        SwingUtilities.invokeLater(() -> {
+            messagesPanel.revalidate();
+            JScrollBar bar = scrollPane.getVerticalScrollBar();
+            bar.setValue(bar.getMaximum());
+        });
+    }
+
+    private JPanel buildAvatar(String name, int size) {
+        JPanel av = new JPanel() {
+            @Override protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                        RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(COLOR_GREEN);
+                g2.fillOval(0, 0, getWidth(), getHeight());
+                g2.setColor(Color.WHITE);
+                g2.setFont(new Font("Segoe UI", Font.BOLD, size / 2));
+                FontMetrics fm = g2.getFontMetrics();
+                String init = name != null && !name.isEmpty()
+                        ? String.valueOf(name.charAt(0)).toUpperCase() : "?";
+                g2.drawString(init,
+                        (getWidth()  - fm.stringWidth(init)) / 2,
+                        (getHeight() + fm.getAscent() - fm.getDescent()) / 2);
+                g2.dispose();
+            }
+        };
+        av.setOpaque(false);
+        av.setPreferredSize(new Dimension(size, size));
+        return av;
+    }
+
+    private JButton makeRoundBtn(String icon, String tooltip, int size, Color bg) {
+        JButton btn = new JButton(icon) {
+            @Override protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                        RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(getBackground());
+                g2.fillOval(0, 0, getWidth() - 1, getHeight() - 1);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        btn.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        btn.setForeground(Color.WHITE);
+        btn.setBackground(bg);
+        btn.setOpaque(false);
+        btn.setContentAreaFilled(false);
+        btn.setBorderPainted(false);
+        btn.setFocusPainted(false);
+        btn.setToolTipText(tooltip);
+        btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        btn.setPreferredSize(new Dimension(size, size));
+        return btn;
+    }
+
+    private JButton makeHeaderBtn(String icon, String tooltip) {
+        JButton btn = new JButton(icon);
+        btn.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        btn.setForeground(new Color(180, 190, 180));
+        btn.setBackground(BG_HEADER);
+        btn.setBorderPainted(false);
+        btn.setContentAreaFilled(false);
+        btn.setFocusPainted(false);
+        btn.setToolTipText(tooltip);
+        btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        btn.setPreferredSize(new Dimension(50, 36));
+        return btn;
+    }
+
+    // ── PCM → WAV ────────────────────────────────────────────────
+    private byte[] pcmToWav(byte[] pcm, int sampleRate, int channels, int bitDepth) {
+        int byteRate   = sampleRate * channels * bitDepth / 8;
+        int blockAlign = channels * bitDepth / 8;
+        ByteArrayOutputStream out = new ByteArrayOutputStream(44 + pcm.length);
+        try {
+            out.write("RIFF".getBytes());  writeInt(out,   36 + pcm.length);
+            out.write("WAVE".getBytes());
+            out.write("fmt ".getBytes());  writeInt(out,   16);
+            writeShort(out, (short) 1);    writeShort(out, (short) channels);
+            writeInt(out, sampleRate);     writeInt(out,   byteRate);
+            writeShort(out, (short) blockAlign);
+            writeShort(out, (short) bitDepth);
+            out.write("data".getBytes());  writeInt(out, pcm.length);
+            out.write(pcm);
+        } catch (IOException ignored) {}
+        return out.toByteArray();
+    }
+
+    private void writeInt(ByteArrayOutputStream o, int v) throws IOException {
+        o.write(v & 0xFF); o.write((v >> 8) & 0xFF);
+        o.write((v >> 16) & 0xFF); o.write((v >> 24) & 0xFF);
+    }
+
+    private void writeShort(ByteArrayOutputStream o, short v) throws IOException {
+        o.write(v & 0xFF); o.write((v >> 8) & 0xFF);
     }
 }

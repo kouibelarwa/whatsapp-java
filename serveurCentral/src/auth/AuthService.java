@@ -32,6 +32,8 @@ public class AuthService {
         }).start();
     }
 
+    // ─── STEP 2 : vérifier le code ───────────────────────────────
+    // Dans AuthService.java
     public void verifyCode(String phone, String code,
                            String username, AuthCallback cb) {
         new Thread(() -> {
@@ -41,12 +43,14 @@ public class AuthService {
                 if (res == null) { cb.onError("NO_RESPONSE"); return; }
 
                 if (res.startsWith("AUTH_OK:")) {
-                    String[] p = res.split(":", 4);
-                    int uid = Integer.parseInt(p[1]);
+                    String[] p    = res.split(":", 4);
+                    int    uid    = Integer.parseInt(p[1]);
                     String rPhone = p[2];
                     String rUser = p.length > 3 ? p[3] : username;
 
                     SessionManager.saveSession(uid, rPhone, rUser);
+
+                    // ✅ FIX PRINCIPAL : injecter le socket AVANT enableBinaryMode
                     SocketManager.getInstance().initAuth(
                             network.getSocket(), uid, rPhone);
                     SocketManager.getInstance().enableBinaryMode();
