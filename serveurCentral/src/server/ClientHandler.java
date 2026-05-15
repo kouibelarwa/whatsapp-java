@@ -349,36 +349,83 @@ public class ClientHandler extends Thread {
                 }
 
                 if (otherPhone.startsWith("GROUP_")) {
-                    int groupId = Integer.parseInt(otherPhone.replace("GROUP_", ""));
-                    java.util.List<Integer> members = userDao.getGroupMembers(groupId);
-                    for (int memberId : members) {
-                        if (memberId == userId) continue;
-                        java.util.List<ClientHandler> receivers = ChatServer.clients.get(memberId);
-                        if (receivers != null) {
-                            for (ClientHandler receiver : receivers) {
-                                final String fSignal = signal;
-                                final String fCallType = callType;
-                                final String fOtherPhone = otherPhone;
-                                
-                                mediaExecutor.submit(() -> {
-                                    try {
-                                        if (fSignal.equals("CALL_REQUEST")) {
-                                            String actualName = fOtherPhone;
-                                            if (fOtherPhone.startsWith("GROUP_")) {
-                                                int gId = Integer.parseInt(fOtherPhone.replace("GROUP_", ""));
-                                                actualName = userDao.getGroupName(gId);
-                                            }
-                                            receiver.send("CALL_SIGNAL", fOtherPhone, "", ("CALL_INCOMING:" + fCallType + ":" + fOtherPhone + ":" + actualName).getBytes(StandardCharsets.UTF_8));
-                                        } else if (fSignal.equals("CALL_ACCEPT")) {
-                                            receiver.send("CALL_SIGNAL", fOtherPhone, "", ("CALL_ACCEPTED:" + fOtherPhone).getBytes(StandardCharsets.UTF_8));
-                                        } else if (fSignal.equals("CALL_END")) {
-                                            receiver.send("CALL_SIGNAL", fOtherPhone, "", ("CALL_LEFT:" + fOtherPhone + ":" + userPhone).getBytes(StandardCharsets.UTF_8));
-                                        } else {
-                                            receiver.send("CALL_SIGNAL", fOtherPhone, "", (fSignal + ":" + fOtherPhone).getBytes(StandardCharsets.UTF_8));
-                                        }
-                                    } catch (Exception e) {}
-                                });
+                    String groupKey = otherPhone; // "GROUP_id"
+                    java.util.Set<String> activeParticipants = ChatServer.activeGroupCalls.computeIfAbsent(groupKey, k -> java.util.concurrent.ConcurrentHashMap.newKeySet());
+                    
+                    if (signal.equals("CALL_REQUEST")) {
+                        activeParticipants.add(userPhone);
+                        int groupId = Integer.parseInt(groupKey.replace("GROUP_", ""));
+                        java.util.List<Integer> members = userDao.getGroupMembers(groupId);
+                        String groupName = userDao.getGroupName(groupId);
+                        
+                        for (int memberId : members) {
+                            if (memberId == userId) continue;
+                            java.util.List<ClientHandler> receivers = ChatServer.clients.get(memberId);
+                            if (receivers != null) {
+                                for (ClientHandler receiver : receivers) {
+                                    if (activeParticipants.contains(receiver.getUserPhone())) continue;
+                                    final String fCallType = callType;
+                                    final String fOtherPhone = otherPhone;
+                                    final String fGroupName = groupName;
+                                    mediaExecutor.submit(() -> {
+                                        try {
+                                            receiver.send("CALL_SIGNAL", fOtherPhone, "", ("CALL_INCOMING:" + fCallType + ":" + fOtherPhone + ":" + fGroupName).getBytes(StandardCharsets.UTF_8));
+                                        } catch (Exception e) {}
+                                    });
+                                }
                             }
+                        }
+                    } else if (signal.equals("CALL_ACCEPT")) {
+                        activeParticipants.add(userPhone);
+                        String joinedSignal = "CALL_JOINED:" + userPhone;
+                        String activeListSignal = "CALL_ACTIVE_LIST:" + String.join(",", activeParticipants);
+                        
+                        for (String activePhone : activeParticipants) {
+                            User activeUser = userDao.searchByPhone(activePhone);
+                            if (activeUser == null) continue;
+                            java.util.List<ClientHandler> handlers = ChatServer.clients.get(activeUser.getId());
+                            if (handlers == null) continue;
+                            for (ClientHandler handler : handlers) {
+                                try {
+                                    if (activePhone.equals(userPhone)) {
+                                        handler.send("CALL_SIGNAL", groupKey, "", activeListSignal.getBytes(StandardCharsets.UTF_8));
+                                    } else {
+                                        handler.send("CALL_SIGNAL", groupKey, "", joinedSignal.getBytes(StandardCharsets.UTF_8));
+                                    }
+                                } catch (Exception e) {}
+                            }
+                        }
+                    } else if (signal.equals("CALL_END") || signal.equals("CALL_REJECT")) {
+                        activeParticipants.remove(userPhone);
+                        String leftSignal = "CALL_LEFT:" + userPhone;
+                        for (String activePhone : activeParticipants) {
+                            User activeUser = userDao.searchByPhone(activePhone);
+                            if (activeUser == null) continue;
+                            java.util.List<ClientHandler> handlers = ChatServer.clients.get(activeUser.getId());
+                            if (handlers == null) continue;
+                            for (ClientHandler handler : handlers) {
+                                try {
+                                    handler.send("CALL_SIGNAL", groupKey, "", leftSignal.getBytes(StandardCharsets.UTF_8));
+                                } catch (Exception e) {}
+                            }
+                        }
+                        if (activeParticipants.size() == 1) {
+                            String lastPhone = activeParticipants.iterator().next();
+                            activeParticipants.clear();
+                            ChatServer.activeGroupCalls.remove(groupKey);
+                            User lastUser = userDao.searchByPhone(lastPhone);
+                            if (lastUser != null) {
+                                java.util.List<ClientHandler> handlers = ChatServer.clients.get(lastUser.getId());
+                                if (handlers != null) {
+                                    for (ClientHandler handler : handlers) {
+                                        try {
+                                            handler.send("CALL_SIGNAL", groupKey, "", "CALL_TERMINATED".getBytes(StandardCharsets.UTF_8));
+                                        } catch (Exception e) {}
+                                    }
+                                }
+                            }
+                        } else if (activeParticipants.isEmpty()) {
+                            ChatServer.activeGroupCalls.remove(groupKey);
                         }
                     }
                     break;
@@ -406,22 +453,28 @@ public class ClientHandler extends Thread {
             case "CALL_AUDIO":
             case "CALL_VIDEO": {
                 if (receiverPhone.startsWith("GROUP_")) {
-                    int groupId = Integer.parseInt(receiverPhone.replace("GROUP_", ""));
-                    java.util.List<Integer> members = userDao.getGroupMembers(groupId);
-                    for (int memberId : members) {
-                        if (memberId == userId) continue;
-                        java.util.List<ClientHandler> receivers = ChatServer.clients.get(memberId);
+                    String groupKey = receiverPhone;
+                    java.util.Set<String> activeParticipants = ChatServer.activeGroupCalls.get(groupKey);
+                    if (activeParticipants == null || !activeParticipants.contains(userPhone)) break;
+
+                    for (String activePhone : activeParticipants) {
+                        if (activePhone.equals(userPhone)) continue;
+                        User receiverUser = userDao.searchByPhone(activePhone);
+                        if (receiverUser == null) continue;
+                        java.util.List<ClientHandler> receivers = ChatServer.clients.get(receiverUser.getId());
                         if (receivers != null) {
                             for (ClientHandler receiver : receivers) {
-                                final String fType = type;
-                                final String fReceiverPhone = receiverPhone;
-                                final String fUserPhone = userPhone;
-                                final byte[] fData = data;
-                                mediaExecutor.submit(() -> {
-                                    try {
-                                        receiver.send(fType, fReceiverPhone, fUserPhone, fData);
-                                    } catch (IOException e) {}
-                                });
+                                if (type.equals("CALL_AUDIO")) {
+                                    try { receiver.send(type, receiverPhone, userPhone, data); } catch (IOException e) {}
+                                } else {
+                                    final String fType = type;
+                                    final String fReceiverPhone = receiverPhone;
+                                    final String fUserPhone = userPhone;
+                                    final byte[] fData = data;
+                                    mediaExecutor.submit(() -> {
+                                        try { receiver.send(fType, fReceiverPhone, fUserPhone, fData); } catch (IOException e) {}
+                                    });
+                                }
                             }
                         }
                     }
@@ -480,6 +533,24 @@ public class ClientHandler extends Thread {
 
     private void disconnect() {
         if (userId != -1) {
+            for (String groupKey : ChatServer.activeGroupCalls.keySet()) {
+                java.util.Set<String> active = ChatServer.activeGroupCalls.get(groupKey);
+                if (active != null && active.contains(userPhone)) {
+                    active.remove(userPhone);
+                    // Broadcast exit to others in group call
+                    for (String otherPhone : active) {
+                        User other = userDao.searchByPhone(otherPhone);
+                        if (other != null) {
+                            java.util.List<ClientHandler> handlers = ChatServer.clients.get(other.getId());
+                            if (handlers != null) {
+                                for (ClientHandler h : handlers) {
+                                    try { h.send("CALL_SIGNAL", groupKey, "", ("CALL_LEFT:" + userPhone).getBytes(StandardCharsets.UTF_8)); } catch (Exception e) {}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             java.util.List<ClientHandler> userHandlers = ChatServer.clients.get(userId);
             if (userHandlers != null) {
                 userHandlers.remove(this);

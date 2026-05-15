@@ -25,8 +25,16 @@ public class SocketManager {
         this.userPhone = phone;
     }
 
+    public String getUserPhone() {
+        return userPhone;
+    }
+
     public void setUserId(int userId) {
         this.userId = userId;
+    }
+
+    public int getUserId() {
+        return userId;
     }
 
     public void enableBinaryMode() throws IOException {
