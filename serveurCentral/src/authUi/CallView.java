@@ -396,21 +396,7 @@ public class CallView {
                             rv.setStyle("-fx-border-color: #00A884; -fx-border-width: 1px;");
                             remoteVideoMap.put(sender, rv);
                             remoteVideoPane.getChildren().add(rv);
-                        }
-                        
-                        int count = remoteVideoMap.size();
-                        double width = count == 1 ? 400 : (count <= 4 ? 190 : 120);
-                        double height = count == 1 ? 300 : (count <= 4 ? 140 : 90);
-                        
-                        rv.setFitWidth(width);
-                        rv.setFitHeight(height);
-                        
-                        if (count > 4) {
-                            remoteVideoPane.setPrefColumns(3);
-                        } else if (count > 1) {
-                            remoteVideoPane.setPrefColumns(2);
-                        } else {
-                            remoteVideoPane.setPrefColumns(1);
+                            updateLayout(); // Resize all views
                         }
                         
                         rv.setImage(fxImage);
