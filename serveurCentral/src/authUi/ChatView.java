@@ -412,11 +412,27 @@ public class ChatView {
                         ("CALL_REJECT:" + callerPhone).getBytes(StandardCharsets.UTF_8));
                 activeCallView = null;
             }, () -> {
-                socketManager.sendBinary("CALL_SIGNAL", callerPhone, "",
-                        ("CALL_END:" + callerPhone).getBytes(StandardCharsets.UTF_8));
+                // Hangup handled by CallView itself now
                 activeCallView = null;
             }, socketManager);
+            
+            // If the request includes a list of participants (multi-party), add them
+            if (parts.length >= 5) {
+                activeCallView.handleActiveList(parts[4]);
+            }
+            
             activeCallView.start(new Stage());
+            return;
+        }
+
+        if (signal.equals("CALL_ADD_PARTICIPANT")) {
+            String newPhone = parts.length >= 2 ? parts[1] : null;
+            if (newPhone != null && activeCallView != null) {
+                activeCallView.handleJoined(newPhone);
+                // The new participant doesn't need to be in targetPhones for relaying (group mode)
+                // but if we are in P2P mode, we might need to add them to targetPhones.
+                // Let's assume we want to support P2P mesh too.
+            }
             return;
         }
 
@@ -451,19 +467,15 @@ public class ChatView {
         if (signal.equals("CALL_REJECTED")) {
             showToast("Appel refusé.");
             String caller = parts.length >= 2 ? parts[1] : sender;
-            if (caller != null && caller.startsWith("GROUP_"))
-                return;
             if (activeCallView != null) {
-                activeCallView.endCall();
-                activeCallView = null;
+                activeCallView.removeParticipant(caller);
             }
             return;
         }
         if (signal.equals("CALL_ENDED")) {
             showToast("Appel terminé.");
             if (activeCallView != null) {
-                activeCallView.endCall();
-                activeCallView = null;
+                activeCallView.removeParticipant(sender);
             }
             return;
         }

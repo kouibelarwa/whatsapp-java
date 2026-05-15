@@ -216,4 +216,18 @@ public class CallService {
             System.err.println("[CallService] Impossible de sauvegarder la notification : " + action);
         }
     }
+    public void handleGenericSignal(int senderId, String senderPhone, String receiverPhone, String signal, String[] parts) {
+        User receiver = userDao.searchByPhone(receiverPhone);
+        if (receiver == null) return;
+
+        java.util.List<ClientHandler> handlers = ChatServer.clients.get(receiver.getId());
+        if (handlers == null) return;
+
+        String fullPayload = String.join(":", parts);
+        for (ClientHandler handler : handlers) {
+            try {
+                handler.send("CALL_SIGNAL", senderPhone, "", fullPayload.getBytes(StandardCharsets.UTF_8));
+            } catch (IOException e) {}
+        }
+    }
 }

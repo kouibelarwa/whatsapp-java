@@ -210,14 +210,23 @@ public class CallView {
         Optional<String> result = dialog.showAndWait();
         if (result.isPresent() && !result.get().trim().isEmpty()) {
             String newPhone = result.get().trim().replaceAll("[\\s\\-()]", "");
+            
+            // Notify current participants about the new one
+            String syncSignal = "CALL_ADD_PARTICIPANT:" + newPhone;
+            for (String tp : targetPhones) {
+                socketManager.sendBinary("CALL_SIGNAL", tp, "", syncSignal.getBytes(StandardCharsets.UTF_8));
+            }
+            
+            // Request the new one to join, including current group info if applicable
             targetPhones.add(newPhone);
-            socketManager.sendBinary("CALL_SIGNAL", newPhone, "",
-                    ("CALL_REQUEST:" + callType.toUpperCase() + ":" + newPhone).getBytes(StandardCharsets.UTF_8));
+            String requestPayload = "CALL_REQUEST:" + callType.toUpperCase() + ":" + contactPhone + ":" + String.join(",", targetPhones);
+            socketManager.sendBinary("CALL_SIGNAL", newPhone, "", requestPayload.getBytes(StandardCharsets.UTF_8));
         }
     }
 
     public void removeParticipant(String phone) {
         synchronized (targetPhones) {
+            targetPhones.remove(phone);
             Platform.runLater(() -> {
                 ImageView iv = remoteVideoMap.remove(phone);
                 if (iv != null && remoteVideoPane != null) {
@@ -225,21 +234,32 @@ public class CallView {
                     updateLayout();
                 }
             });
+            if (targetPhones.isEmpty()) {
+                Platform.runLater(this::endCall);
+            }
         }
     }
 
     public void handleActiveList(String list) {
         // list = "phone1,phone2,..."
         String[] phones = list.split(",");
-        for (String p : phones) {
-            if (p.isEmpty() || p.equals(socketManager.getUserPhone())) continue;
-            // No need to add to targetPhones since we send to the group ID
-            // But we can pre-init the UI if we want
+        synchronized (targetPhones) {
+            for (String p : phones) {
+                if (p.isEmpty() || p.equals(socketManager.getUserPhone())) continue;
+                if (!p.startsWith("GROUP_") && !p.equals(contactPhone)) {
+                    targetPhones.add(p);
+                }
+            }
         }
     }
 
     public void handleJoined(String phone) {
         if (phone.equals(socketManager.getUserPhone())) return;
+        synchronized (targetPhones) {
+            if (!phone.startsWith("GROUP_") && !phone.equals(contactPhone)) {
+                targetPhones.add(phone);
+            }
+        }
         Platform.runLater(() -> statusLbl.setText(phone + " a rejoint l'appel"));
     }
 
@@ -329,7 +349,15 @@ public class CallView {
                             final byte[] packet = new byte[bytesRead];
                             System.arraycopy(buffer, 0, packet, 0, bytesRead);
                             // Direct send for audio to minimize lag
-                            socketManager.sendBinary("CALL_AUDIO", contactPhone, "", packet);
+                            if (contactPhone.startsWith("GROUP_")) {
+                                socketManager.sendBinary("CALL_AUDIO", contactPhone, "", packet);
+                            } else {
+                                synchronized (targetPhones) {
+                                    for (String tp : targetPhones) {
+                                        socketManager.sendBinary("CALL_AUDIO", tp, "", packet);
+                                    }
+                                }
+                            }
                         }
                     }
                 });
@@ -361,10 +389,21 @@ public class CallView {
                                 if (isCallActive) {
                                     try {
                                         ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                                        // Use slightly lower quality for video to save bandwidth/latency
+                                        // Reduce quality to 0.3 for much better latency and sync
+                                        // Note: ImageIO doesn't support quality param directly without ImageWriteParam
+                                        // We will just use the default write for now, but ensure it's JPG
                                         ImageIO.write(image, "jpg", baos);
                                         final byte[] frameData = baos.toByteArray();
-                                        socketManager.sendBinary("CALL_VIDEO", contactPhone, "", frameData);
+                                        
+                                        if (contactPhone.startsWith("GROUP_")) {
+                                            socketManager.sendBinary("CALL_VIDEO", contactPhone, "", frameData);
+                                        } else {
+                                            synchronized (targetPhones) {
+                                                for (String tp : targetPhones) {
+                                                    socketManager.sendBinary("CALL_VIDEO", tp, "", frameData);
+                                                }
+                                            }
+                                        }
                                     } catch (Exception e) { e.printStackTrace(); }
                                 }
                             }
@@ -427,10 +466,18 @@ public class CallView {
         }
 
         if (wasActive) {
+            // Notify ALL participants that we are leaving
+            for (String tp : targetPhones) {
+                socketManager.sendBinary("CALL_SIGNAL", tp, "", ("CALL_END:" + tp).getBytes(StandardCharsets.UTF_8));
+            }
             if (onHangup != null) onHangup.run();
         } else if (isIncoming) {
             if (onDecline != null) onDecline.run();
         } else if (onHangup != null) {
+            // For outgoing call not yet accepted, still notify target
+            for (String tp : targetPhones) {
+                socketManager.sendBinary("CALL_SIGNAL", tp, "", ("CALL_END:" + tp).getBytes(StandardCharsets.UTF_8));
+            }
             onHangup.run();
         }
         Platform.runLater(() -> stage.close());
