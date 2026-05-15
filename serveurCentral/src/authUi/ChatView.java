@@ -426,6 +426,26 @@ public class ChatView {
                 activeCallView.startCallSession();
             return;
         }
+        if (signal.equals("CALL_JOINED")) {
+            String joinedPhone = parts.length >= 2 ? parts[1] : null;
+            if (joinedPhone != null && activeCallView != null) {
+                activeCallView.handleJoined(joinedPhone);
+            }
+            return;
+        }
+        if (signal.equals("CALL_ACTIVE_LIST")) {
+            String list = parts.length >= 2 ? parts[1] : "";
+            if (activeCallView != null) {
+                activeCallView.handleActiveList(list);
+            }
+            return;
+        }
+        if (signal.equals("CALL_TERMINATED")) {
+            if (activeCallView != null) {
+                activeCallView.handleTerminated();
+            }
+            return;
+        }
         if (signal.equals("CALL_REJECTED")) {
             showToast("Appel refusé.");
             String caller = parts.length >= 2 ? parts[1] : sender;
@@ -446,7 +466,7 @@ public class ChatView {
             return;
         }
         if (signal.equals("CALL_LEFT")) {
-            String leftPhone = parts.length >= 3 ? parts[2] : null;
+            String leftPhone = parts.length >= 2 ? parts[1] : null;
             if (leftPhone != null && activeCallView != null) {
                 showToast("Participant a quitté l'appel.");
                 activeCallView.removeParticipant(leftPhone);

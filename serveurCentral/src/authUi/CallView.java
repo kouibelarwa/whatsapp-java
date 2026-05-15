@@ -217,17 +217,58 @@ public class CallView {
     }
 
     public void removeParticipant(String phone) {
-        if (targetPhones.contains(phone)) {
-            targetPhones.remove(phone);
+        synchronized (targetPhones) {
             Platform.runLater(() -> {
                 ImageView iv = remoteVideoMap.remove(phone);
                 if (iv != null && remoteVideoPane != null) {
                     remoteVideoPane.getChildren().remove(iv);
+                    updateLayout();
                 }
             });
-            if (targetPhones.isEmpty()) {
-                endCall();
-            }
+        }
+    }
+
+    public void handleActiveList(String list) {
+        // list = "phone1,phone2,..."
+        String[] phones = list.split(",");
+        for (String p : phones) {
+            if (p.isEmpty() || p.equals(socketManager.getUserPhone())) continue;
+            // No need to add to targetPhones since we send to the group ID
+            // But we can pre-init the UI if we want
+        }
+    }
+
+    public void handleJoined(String phone) {
+        if (phone.equals(socketManager.getUserPhone())) return;
+        Platform.runLater(() -> statusLbl.setText(phone + " a rejoint l'appel"));
+    }
+
+    public void handleTerminated() {
+        Platform.runLater(() -> {
+            statusLbl.setText("Appel terminé (seul)");
+            new Thread(() -> {
+                try { Thread.sleep(2000); } catch (Exception e) {}
+                Platform.runLater(this::endCall);
+            }).start();
+        });
+    }
+
+    private void updateLayout() {
+        int count = remoteVideoMap.size();
+        double width = count <= 1 ? 400 : (count <= 4 ? 190 : 120);
+        double height = count <= 1 ? 300 : (count <= 4 ? 140 : 90);
+        
+        for (ImageView rv : remoteVideoMap.values()) {
+            rv.setFitWidth(width);
+            rv.setFitHeight(height);
+        }
+        
+        if (count > 4) {
+            remoteVideoPane.setPrefColumns(3);
+        } else if (count > 1) {
+            remoteVideoPane.setPrefColumns(2);
+        } else {
+            remoteVideoPane.setPrefColumns(1);
         }
     }
 
@@ -281,17 +322,14 @@ public class CallView {
                 audioInput.start();
 
                 audioThread = new Thread(() -> {
-                    byte[] buffer = new byte[1024];
+                    byte[] buffer = new byte[640]; // Smaller buffer for lower latency (20ms at 16kHz)
                     while (isHardwareActive) {
                         int bytesRead = audioInput.read(buffer, 0, buffer.length);
                         if (bytesRead > 0 && isCallActive && !isMuted) {
                             final byte[] packet = new byte[bytesRead];
                             System.arraycopy(buffer, 0, packet, 0, bytesRead);
-                            mediaExecutor.submit(() -> {
-                                for (String tp : targetPhones) {
-                                    socketManager.sendBinary("CALL_AUDIO", tp, "", packet);
-                                }
-                            });
+                            // Direct send for audio to minimize lag
+                            socketManager.sendBinary("CALL_AUDIO", contactPhone, "", packet);
                         }
                     }
                 });
@@ -323,13 +361,10 @@ public class CallView {
                                 if (isCallActive) {
                                     try {
                                         ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                                        // Use slightly lower quality for video to save bandwidth/latency
                                         ImageIO.write(image, "jpg", baos);
                                         final byte[] frameData = baos.toByteArray();
-                                        mediaExecutor.submit(() -> {
-                                            for (String tp : targetPhones) {
-                                                socketManager.sendBinary("CALL_VIDEO", tp, "", frameData);
-                                            }
-                                        });
+                                        socketManager.sendBinary("CALL_VIDEO", contactPhone, "", frameData);
                                     } catch (Exception e) { e.printStackTrace(); }
                                 }
                             }

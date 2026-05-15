@@ -11,6 +11,10 @@ public class ChatServer {
     public static final java.util.concurrent.ConcurrentHashMap<Integer, java.util.List<ClientHandler>> clients =
             new java.util.concurrent.ConcurrentHashMap<>();
 
+    /** Maps groupId (String "GROUP_id") to a set of active participant phones. */
+    public static final java.util.concurrent.ConcurrentHashMap<String, java.util.Set<String>> activeGroupCalls =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     /** CallService partagé par tous les threads. */
     public static final CallService callService = new CallService();
 
