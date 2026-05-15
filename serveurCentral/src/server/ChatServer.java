@@ -1,0 +1,34 @@
+package server;
+
+import service.CallService;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.concurrent.ConcurrentHashMap;
+
+public class ChatServer {
+
+
+    public static final java.util.concurrent.ConcurrentHashMap<Integer, java.util.List<ClientHandler>> clients =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** CallService partagé par tous les threads. */
+    public static final CallService callService = new CallService();
+
+    public static void main(String[] args) throws Exception {
+        SmsApiServer.start();
+        System.out.println("[ChatServer] Initialisation des tables de groupe...");
+        dao.UserDao.initGroupTables();
+        dao.ContactDao.initContactTable();
+        dao.MessageDao.initReplyColumn();
+        
+        ServerSocket serverSocket = new ServerSocket(5000);
+        System.out.println("[ChatServer] Démarré sur le port 5000");
+
+        while (true) {
+            Socket socket = serverSocket.accept();
+            System.out.println("[ChatServer] Connexion : "
+                    + socket.getInetAddress());
+            new ClientHandler(socket).start();
+        }
+    }
+}
