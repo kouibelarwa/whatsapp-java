@@ -445,7 +445,9 @@ public class ClientHandler extends Thread {
                         callService.handleEnd(userId, userPhone, otherPhone);
                         break;
                     default:
-                        System.err.println("[Call] Signal inconnu : " + signal);
+                        // Relay unknown signals (e.g., ADD_PARTICIPANT, etc.) to the other phone
+                        callService.handleGenericSignal(userId, userPhone, otherPhone, signal, parts);
+                        break;
                 }
                 break;
             }
