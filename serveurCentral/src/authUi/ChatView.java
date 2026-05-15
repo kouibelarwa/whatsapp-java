@@ -429,6 +429,7 @@ public class ChatView {
         if (signal.equals("CALL_JOINED")) {
             String joinedPhone = parts.length >= 2 ? parts[1] : null;
             if (joinedPhone != null && activeCallView != null) {
+                activeCallView.startCallSession(); // Essential for the caller to join the conversation
                 activeCallView.handleJoined(joinedPhone);
             }
             return;
@@ -436,6 +437,7 @@ public class ChatView {
         if (signal.equals("CALL_ACTIVE_LIST")) {
             String list = parts.length >= 2 ? parts[1] : "";
             if (activeCallView != null) {
+                activeCallView.startCallSession(); // Essential for participants joining an existing call
                 activeCallView.handleActiveList(list);
             }
             return;
