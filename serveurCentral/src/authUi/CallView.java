@@ -221,13 +221,19 @@ public class CallView {
             
             // Notify current participants about the new one
             String syncSignal = "CALL_ADD_PARTICIPANT:" + newPhone;
-            for (String tp : targetPhones) {
-                socketManager.sendBinary("CALL_SIGNAL", tp, "", syncSignal.getBytes(StandardCharsets.UTF_8));
+            if (contactPhone.startsWith("GROUP_")) {
+                socketManager.sendBinary("CALL_SIGNAL", contactPhone, "", syncSignal.getBytes(StandardCharsets.UTF_8));
+            } else {
+                for (String tp : targetPhones) {
+                    socketManager.sendBinary("CALL_SIGNAL", tp, "", syncSignal.getBytes(StandardCharsets.UTF_8));
+                }
             }
             
             // Request the new one to join, including current group info if applicable
             targetPhones.add(newPhone);
-            String requestPayload = "CALL_REQUEST:" + callType.toUpperCase() + ":" + contactPhone + ":" + String.join(",", targetPhones);
+            String activeList = socketManager.getUserPhone() + "," + String.join(",", targetPhones);
+            // Payload format for custom relay: CALL_INVITE:TYPE:contactPhone:activeList:newPhone
+            String requestPayload = "CALL_INVITE:" + callType.toUpperCase() + ":" + contactPhone + ":" + activeList + ":" + newPhone;
             socketManager.sendBinary("CALL_SIGNAL", newPhone, "", requestPayload.getBytes(StandardCharsets.UTF_8));
             Platform.runLater(this::updateLayout);
         }
@@ -356,7 +362,7 @@ public class CallView {
         if (hasVideo && videoView != null) {
             videoView.setFitWidth(width);
             videoView.setFitHeight(height);
-            videoView.setPreserveRatio(false); // Stretch to fill the rounded card beautifully
+            videoView.setPreserveRatio(true); // Preserve aspect ratio to avoid distortion
 
             // Clip video view to have rounded corners matching the card
             javafx.scene.shape.Rectangle clip = new javafx.scene.shape.Rectangle(width, height);
@@ -562,39 +568,44 @@ public class CallView {
         // Vidéo
         if ("video".equals(callType)) {
             new Thread(() -> {
-                webcam = Webcam.getDefault();
-                if (webcam != null) {
-                    webcam.open();
-                    while (isHardwareActive) {
-                        if (!isCameraOff) {
-                            BufferedImage image = webcam.getImage();
-                            if (image != null) {
-                                WritableImage fxImage = SwingFXUtils.toFXImage(image, null);
-                                Platform.runLater(() -> {
-                                    localVideoView.setImage(fxImage);
-                                });
+                try {
+                    webcam = Webcam.getDefault();
+                    if (webcam != null) {
+                        webcam.open();
+                        while (isHardwareActive) {
+                            if (!isCameraOff) {
+                                BufferedImage image = webcam.getImage();
+                                if (image != null) {
+                                    WritableImage fxImage = SwingFXUtils.toFXImage(image, null);
+                                    Platform.runLater(() -> {
+                                        localVideoView.setImage(fxImage);
+                                    });
 
-                                if (isCallActive) {
-                                    try {
-                                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                                        ImageIO.write(image, "jpg", baos);
-                                        final byte[] frameData = baos.toByteArray();
-                                        
-                                        if (contactPhone.startsWith("GROUP_")) {
-                                            socketManager.sendBinary("CALL_VIDEO", contactPhone, "", frameData);
-                                        } else {
-                                            synchronized (targetPhones) {
-                                                for (String tp : targetPhones) {
-                                                    socketManager.sendBinary("CALL_VIDEO", tp, "", frameData);
+                                    if (isCallActive) {
+                                        try {
+                                            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                                            ImageIO.write(image, "jpg", baos);
+                                            final byte[] frameData = baos.toByteArray();
+                                            
+                                            if (contactPhone.startsWith("GROUP_")) {
+                                                socketManager.sendBinary("CALL_VIDEO", contactPhone, "", frameData);
+                                            } else {
+                                                synchronized (targetPhones) {
+                                                    for (String tp : targetPhones) {
+                                                        socketManager.sendBinary("CALL_VIDEO", tp, "", frameData);
+                                                    }
                                                 }
                                             }
-                                        }
-                                    } catch (Exception e) { e.printStackTrace(); }
+                                        } catch (Exception e) { e.printStackTrace(); }
+                                    }
                                 }
                             }
+                            try { Thread.sleep(100); } catch (InterruptedException ignored) {} // ~10 FPS
                         }
-                        try { Thread.sleep(100); } catch (InterruptedException ignored) {} // ~10 FPS
                     }
+                } catch (Exception ex) {
+                    System.err.println("Erreur avec la webcam (peut-être déjà utilisée par une autre application): " + ex.getMessage());
+                    ex.printStackTrace();
                 }
             }).start();
         }
