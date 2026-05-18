@@ -399,13 +399,20 @@ public class ChatView {
         String[] parts = payload.split(":");
         String signal = parts[0];
 
-        if (signal.equals("CALL_INCOMING") || signal.equals("CALL_REQUEST")) {
+        if (signal.equals("CALL_INCOMING") || signal.equals("CALL_REQUEST") || signal.equals("CALL_INVITE")) {
             String callType = parts.length >= 2 ? parts[1].toLowerCase() : "audio";
-            String callerPhone = parts.length >= 3 ? parts[2] : (sender != null ? sender : "Inconnu");
+            String callerPhone;
+            
+            if (signal.equals("CALL_INVITE")) {
+                // CALL_INVITE:TYPE:contactPhone:activeList:newPhone
+                callerPhone = parts[2];
+            } else {
+                callerPhone = parts.length >= 3 ? parts[2] : (sender != null ? sender : "Inconnu");
+            }
             
             // Priorité : Surnom local > Nom envoyé par serveur (pour groupes) > Numéro brut
             String callerDisplayName = contactView.allContacts.getOrDefault(callerPhone, callerPhone);
-            if (callerDisplayName.equals(callerPhone) && parts.length >= 4) {
+            if (callerDisplayName.equals(callerPhone) && parts.length >= 4 && !signal.equals("CALL_INVITE")) {
                 callerDisplayName = parts[3]; // Nom synchronisé envoyé par le serveur
             }
 
@@ -420,7 +427,9 @@ public class ChatView {
             activeCallView.setAllContacts(contactView.allContacts);
             
             // If the request includes a list of participants (multi-party), add them
-            if (parts.length >= 5) {
+            if (signal.equals("CALL_INVITE") && parts.length >= 4) {
+                activeCallView.handleActiveList(parts[3]);
+            } else if (parts.length >= 5) {
                 activeCallView.handleActiveList(parts[4]);
             }
             
