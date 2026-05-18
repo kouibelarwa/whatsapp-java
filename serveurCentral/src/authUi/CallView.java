@@ -578,7 +578,11 @@ public class CallView {
                                 if (image != null) {
                                     WritableImage fxImage = SwingFXUtils.toFXImage(image, null);
                                     Platform.runLater(() -> {
+                                        boolean isFirstFrame = (localVideoView.getImage() == null);
                                         localVideoView.setImage(fxImage);
+                                        if (isFirstFrame) {
+                                            updateLayout(); // Mettre à jour la grille dès que la première image arrive
+                                        }
                                     });
 
                                     if (isCallActive) {
