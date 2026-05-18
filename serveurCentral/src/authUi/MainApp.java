@@ -71,7 +71,7 @@ public class MainApp {
         if (fromEnv != null && !fromEnv.isBlank()) {
             return fromEnv.trim();
         }
-        return "100.104.160.201";
+        return "100.104.161.20";
     }
 
     public static int resolveServerPort() {

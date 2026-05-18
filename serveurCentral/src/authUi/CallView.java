@@ -284,7 +284,15 @@ public class CallView {
     }
 
     private void updateLayout() {
-        int count = targetPhones.size() + 1; // All participants (remote + local)
+        int count = 1; // Local user
+        synchronized (targetPhones) {
+            for (String phone : targetPhones) {
+                if (!phone.startsWith("GROUP_")) {
+                    count++;
+                }
+            }
+        }
+        
         double cardWidth, cardHeight;
         int cols;
 
@@ -324,6 +332,9 @@ public class CallView {
         // 2. Remote User cards
         synchronized (targetPhones) {
             for (String phone : targetPhones) {
+                if (phone.startsWith("GROUP_")) {
+                    continue; // Ne pas afficher la carte du groupe lui-même
+                }
                 String resolvedName = allContacts.getOrDefault(phone, phone);
                 ImageView rv = remoteVideoMap.get(phone);
                 boolean hasRemoteVideo = "video".equals(callType) && rv != null && rv.getImage() != null;
