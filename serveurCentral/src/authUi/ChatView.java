@@ -228,6 +228,7 @@ public class ChatView {
                     ("CALL_END:" + targetPhone).getBytes(StandardCharsets.UTF_8));
             activeCallView = null;
         }, socketManager);
+        activeCallView.setAllContacts(contactView.allContacts);
         activeCallView.start(new Stage());
     }
 
@@ -369,7 +370,8 @@ public class ChatView {
 
                     case "CALL_AUDIO":
                         if (activeCallView != null) {
-                            activeCallView.receiveAudio(data);
+                            String speakerPhone = (filename != null && !filename.isEmpty()) ? filename : sender;
+                            activeCallView.receiveAudio(speakerPhone, data);
                         }
                         break;
 
@@ -415,6 +417,7 @@ public class ChatView {
                 // Hangup handled by CallView itself now
                 activeCallView = null;
             }, socketManager);
+            activeCallView.setAllContacts(contactView.allContacts);
             
             // If the request includes a list of participants (multi-party), add them
             if (parts.length >= 5) {

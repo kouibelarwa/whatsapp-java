@@ -15,13 +15,15 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.layout.TilePane;
-import javafx.scene.paint.Color;
 import javafx.stage.Stage;
-import javafx.stage.StageStyle;
 import javafx.scene.control.TextInputDialog;
 import java.util.Optional;
 import java.util.Set;
 import java.util.HashSet;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 import javax.imageio.ImageIO;
 import javax.sound.sampled.*;
@@ -43,12 +45,23 @@ public class CallView {
     private final SocketManager socketManager;
 
     private Stage stage;
-    private TilePane remoteVideoPane;
+    private TilePane participantsGrid;
     private java.util.Map<String, ImageView> remoteVideoMap = new java.util.HashMap<>();
     private Set<String> targetPhones = new HashSet<>();
     private ImageView localVideoView;
     private Label statusLbl;
     private HBox btnBox;
+
+    // Contact mapping to resolve participant names
+    private java.util.Map<String, String> allContacts = new java.util.HashMap<>();
+
+    // Audio mixing and speech detection
+    private final java.util.Map<String, java.util.concurrent.ConcurrentLinkedQueue<byte[]>> participantAudioQueues = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<String, Long> lastSpeechTime = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<String, StackPane> participantCards = new java.util.HashMap<>();
+    
+    private Thread audioPlaybackThread;
+    private javafx.animation.Timeline speakingIndicatorTimeline;
 
     // A/V Components
     private Webcam webcam;
@@ -80,47 +93,44 @@ public class CallView {
         this.targetPhones.add(contactPhone);
     }
 
+    public void setAllContacts(java.util.Map<String, String> allContacts) {
+        if (allContacts != null) {
+            this.allContacts = allContacts;
+        }
+    }
+
     public void start(Stage stage) {
         this.stage = stage;
         stage.setTitle("Appel - " + contactName);
         stage.setOnCloseRequest(e -> endCall());
 
-        VBox root = new VBox(20);
+        VBox root = new VBox(15);
         root.setAlignment(Pos.CENTER);
-        root.setPadding(new Insets(20));
-        root.setStyle("-fx-background-color: #FFFFFF; -fx-border-color: #E9EDEF; -fx-border-width: 1px; -fx-background-radius: 10px; -fx-border-radius: 10px;");
+        root.setPadding(new Insets(15));
+        root.setStyle("-fx-background-color: #111B21; -fx-border-color: #202C33; -fx-border-width: 1px; -fx-background-radius: 12px; -fx-border-radius: 12px;");
 
-        Label typeLbl = new Label("video".equals(callType) ? "📹 Appel Vidéo" : "📞 Appel Audio");
-        typeLbl.setStyle("-fx-text-fill: #667781; -fx-font-size: 14px;");
+        Label typeLbl = new Label("video".equals(callType) ? "📹 Appel Vidéo de Groupe" : "📞 Appel Audio de Groupe");
+        typeLbl.setStyle("-fx-text-fill: #8696a0; -fx-font-size: 12px; -fx-font-weight: bold;");
 
-        Label nameLbl = new Label(contactName);
-        nameLbl.setStyle("-fx-text-fill: #111B21; -fx-font-size: 24px; -fx-font-weight: bold;");
+        Label nameLbl = new Label(contactPhone.startsWith("GROUP_") ? contactName : "Appel en cours...");
+        nameLbl.setStyle("-fx-text-fill: #E9EDEF; -fx-font-size: 20px; -fx-font-weight: bold;");
 
-        statusLbl = new Label(isIncoming ? "Appel entrant..." : "Appel en cours...");
-        statusLbl.setStyle("-fx-text-fill: #00A884; -fx-font-size: 14px;");
+        statusLbl = new Label(isIncoming ? "Appel entrant..." : "Connexion...");
+        statusLbl.setStyle("-fx-text-fill: #00A884; -fx-font-size: 13px; -fx-font-weight: bold;");
 
-        // Remote Video (Main / Multiple)
-        remoteVideoPane = new TilePane();
-        remoteVideoPane.setAlignment(Pos.CENTER);
-        remoteVideoPane.setHgap(10);
-        remoteVideoPane.setVgap(10);
-        remoteVideoPane.setPrefColumns(1);
-        remoteVideoPane.setPrefSize(400, 300);
-        remoteVideoPane.setStyle("-fx-background-color: #F0F2F5;");
+        // Participants Grid (Unified for Audio & Video)
+        participantsGrid = new TilePane();
+        participantsGrid.setAlignment(Pos.CENTER);
+        participantsGrid.setHgap(10);
+        participantsGrid.setVgap(10);
+        participantsGrid.setPrefSize(400, 360);
+        participantsGrid.setStyle("-fx-background-color: #111B21;");
 
-        // Local Video (Small Preview)
+        // Initialize local video view
         localVideoView = new ImageView();
-        localVideoView.setFitWidth(100);
-        localVideoView.setFitHeight(75);
         localVideoView.setPreserveRatio(true);
-        localVideoView.setStyle("-fx-border-color: #00A884; -fx-border-width: 1px;");
 
-        StackPane videoContainer = new StackPane();
-        videoContainer.setAlignment(Pos.BOTTOM_RIGHT);
-        videoContainer.getChildren().addAll(remoteVideoPane, localVideoView);
-        StackPane.setMargin(localVideoView, new Insets(10));
-
-        btnBox = new HBox(20);
+        btnBox = new HBox(15);
         btnBox.setAlignment(Pos.CENTER);
 
         if (isIncoming) {
@@ -137,17 +147,14 @@ public class CallView {
             btnBox.getChildren().addAll(btnAccept, btnReject);
         } else {
             btnBox.getChildren().add(createEndButton());
-            // Si c'est nous qui appelons, on allume la caméra locale immédiatement
             activateHardware(false);
         }
 
-        if ("video".equals(callType)) {
-            root.getChildren().addAll(typeLbl, nameLbl, statusLbl, videoContainer, btnBox);
-        } else {
-            root.getChildren().addAll(typeLbl, nameLbl, statusLbl, btnBox);
-        }
+        root.getChildren().addAll(typeLbl, nameLbl, statusLbl, participantsGrid, btnBox);
 
-        Scene scene = new Scene(root, 440, "video".equals(callType) ? 550 : 300);
+        updateLayout(); // Renders the initial participant card grid
+
+        Scene scene = new Scene(root, 440, 560);
         stage.setScene(scene);
         stage.show();
     }
@@ -155,7 +162,7 @@ public class CallView {
     private Button createEndButton() {
         Button btnEnd = new Button("Raccrocher");
         btnEnd.setStyle("-fx-background-color: #EA0038; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 20px; -fx-cursor: hand;");
-        btnEnd.setPrefSize(120, 40);
+        btnEnd.setPrefSize(110, 40);
         btnEnd.setOnAction(e -> endCall());
         return btnEnd;
     }
@@ -172,18 +179,18 @@ public class CallView {
             statusLbl.setText("En ligne (00:00)");
             btnBox.getChildren().clear();
             
-            btnMute = new Button("🔇 Couper Micro");
-            btnMute.setStyle("-fx-background-color: #F0F2F5; -fx-text-fill: #111B21; -fx-font-weight: bold; -fx-background-radius: 20px; -fx-cursor: hand;");
-            btnMute.setPrefSize(130, 40);
+            btnMute = new Button("🔇 Micro");
+            btnMute.setStyle("-fx-background-color: #202C33; -fx-text-fill: #E9EDEF; -fx-font-weight: bold; -fx-background-radius: 20px; -fx-cursor: hand;");
+            btnMute.setPrefSize(100, 40);
             btnMute.setOnAction(e -> toggleMute());
             
-            btnCamera = new Button("🚫 Couper Caméra");
-            btnCamera.setStyle("-fx-background-color: #F0F2F5; -fx-text-fill: #111B21; -fx-font-weight: bold; -fx-background-radius: 20px; -fx-cursor: hand;");
-            btnCamera.setPrefSize(140, 40);
+            btnCamera = new Button("🚫 Caméra");
+            btnCamera.setStyle("-fx-background-color: #202C33; -fx-text-fill: #E9EDEF; -fx-font-weight: bold; -fx-background-radius: 20px; -fx-cursor: hand;");
+            btnCamera.setPrefSize(100, 40);
             btnCamera.setOnAction(e -> toggleCamera());
             
-            Button btnAddUser = new Button("➕ Ajouter");
-            btnAddUser.setStyle("-fx-background-color: #F0F2F5; -fx-text-fill: #111B21; -fx-font-weight: bold; -fx-background-radius: 20px; -fx-cursor: hand;");
+            Button btnAddUser = new Button("➕ Inviter");
+            btnAddUser.setStyle("-fx-background-color: #202C33; -fx-text-fill: #E9EDEF; -fx-font-weight: bold; -fx-background-radius: 20px; -fx-cursor: hand;");
             btnAddUser.setPrefSize(100, 40);
             btnAddUser.setOnAction(e -> handleAddParticipant());
             
@@ -196,6 +203,7 @@ public class CallView {
             }
             
             startTimer();
+            startSpeakingIndicatorTimer();
         });
         isCallActive = true;
         if (!isHardwareActive) {
@@ -221,6 +229,7 @@ public class CallView {
             targetPhones.add(newPhone);
             String requestPayload = "CALL_REQUEST:" + callType.toUpperCase() + ":" + contactPhone + ":" + String.join(",", targetPhones);
             socketManager.sendBinary("CALL_SIGNAL", newPhone, "", requestPayload.getBytes(StandardCharsets.UTF_8));
+            Platform.runLater(this::updateLayout);
         }
     }
 
@@ -228,11 +237,8 @@ public class CallView {
         synchronized (targetPhones) {
             targetPhones.remove(phone);
             Platform.runLater(() -> {
-                ImageView iv = remoteVideoMap.remove(phone);
-                if (iv != null && remoteVideoPane != null) {
-                    remoteVideoPane.getChildren().remove(iv);
-                    updateLayout();
-                }
+                remoteVideoMap.remove(phone);
+                updateLayout();
             });
             if (targetPhones.isEmpty()) {
                 Platform.runLater(this::endCall);
@@ -251,6 +257,7 @@ public class CallView {
                 }
             }
         }
+        Platform.runLater(this::updateLayout);
     }
 
     public void handleJoined(String phone) {
@@ -260,7 +267,10 @@ public class CallView {
                 targetPhones.add(phone);
             }
         }
-        Platform.runLater(() -> statusLbl.setText(phone + " a rejoint l'appel"));
+        Platform.runLater(() -> {
+            statusLbl.setText(phone + " a rejoint");
+            updateLayout();
+        });
     }
 
     public void handleTerminated() {
@@ -274,36 +284,111 @@ public class CallView {
     }
 
     private void updateLayout() {
-        int count = remoteVideoMap.size();
-        double width = count <= 1 ? 400 : (count <= 4 ? 190 : 120);
-        double height = count <= 1 ? 300 : (count <= 4 ? 140 : 90);
-        
-        for (ImageView rv : remoteVideoMap.values()) {
-            rv.setFitWidth(width);
-            rv.setFitHeight(height);
-        }
-        
-        if (count > 4) {
-            remoteVideoPane.setPrefColumns(3);
-        } else if (count > 1) {
-            remoteVideoPane.setPrefColumns(2);
+        int count = targetPhones.size() + 1; // All participants (remote + local)
+        double cardWidth, cardHeight;
+        int cols;
+
+        if (count <= 1) {
+            cardWidth = 360;
+            cardHeight = 320;
+            cols = 1;
+        } else if (count == 2) {
+            cardWidth = 185;
+            cardHeight = 320;
+            cols = 2;
+        } else if (count <= 4) {
+            cardWidth = 185;
+            cardHeight = 160;
+            cols = 2;
         } else {
-            remoteVideoPane.setPrefColumns(1);
+            cardWidth = 120;
+            cardHeight = 100;
+            cols = 3;
         }
+
+        participantsGrid.setPrefColumns(cols);
+        rebuildGrid(cardWidth, cardHeight);
+    }
+
+    private void rebuildGrid(double cardWidth, double cardHeight) {
+        participantsGrid.getChildren().clear();
+        participantCards.clear();
+
+        // 1. Local User card
+        String localPhone = socketManager.getUserPhone();
+        boolean hasLocalVideo = "video".equals(callType) && !isCameraOff && localVideoView.getImage() != null;
+        StackPane localCard = createParticipantCard(localPhone, "Moi (Vous)", cardWidth, cardHeight, hasLocalVideo, localVideoView);
+        participantsGrid.getChildren().add(localCard);
+        participantCards.put(localPhone, localCard);
+
+        // 2. Remote User cards
+        synchronized (targetPhones) {
+            for (String phone : targetPhones) {
+                String resolvedName = allContacts.getOrDefault(phone, phone);
+                ImageView rv = remoteVideoMap.get(phone);
+                boolean hasRemoteVideo = "video".equals(callType) && rv != null && rv.getImage() != null;
+                
+                StackPane remoteCard = createParticipantCard(phone, resolvedName, cardWidth, cardHeight, hasRemoteVideo, rv);
+                participantsGrid.getChildren().add(remoteCard);
+                participantCards.put(phone, remoteCard);
+            }
+        }
+    }
+
+    private StackPane createParticipantCard(String phone, String name, double width, double height, boolean hasVideo, ImageView videoView) {
+        StackPane card = new StackPane();
+        card.setPrefSize(width, height);
+        card.setMinSize(width, height);
+        card.setMaxSize(width, height);
+        card.setStyle("-fx-background-color: #1F2C34; -fx-background-radius: 12px; -fx-border-radius: 12px; -fx-border-color: #2D3D48; -fx-border-width: 1px;");
+
+        if (hasVideo && videoView != null) {
+            videoView.setFitWidth(width);
+            videoView.setFitHeight(height);
+            videoView.setPreserveRatio(false); // Stretch to fill the rounded card beautifully
+
+            // Clip video view to have rounded corners matching the card
+            javafx.scene.shape.Rectangle clip = new javafx.scene.shape.Rectangle(width, height);
+            clip.setArcWidth(24);
+            clip.setArcHeight(24);
+            videoView.setClip(clip);
+
+            card.getChildren().add(videoView);
+
+            Label nameOverlayLbl = new Label(name);
+            nameOverlayLbl.setStyle("-fx-text-fill: #E9EDEF; -fx-font-weight: bold; -fx-font-size: 11px; -fx-background-color: rgba(17, 27, 33, 0.6); -fx-background-radius: 4px; -fx-padding: 3 8 3 8;");
+            StackPane.setAlignment(nameOverlayLbl, Pos.BOTTOM_CENTER);
+            StackPane.setMargin(nameOverlayLbl, new Insets(8));
+            card.getChildren().add(nameOverlayLbl);
+        } else {
+            StackPane avatar = ChatView.buildAvatar(name, height > 120 ? 64 : 44);
+            Label nameCardLbl = new Label(name);
+            nameCardLbl.setStyle("-fx-text-fill: #E9EDEF; -fx-font-weight: bold; -fx-font-size: " + (height > 120 ? "14px" : "11px") + ";");
+            VBox centerBox = new VBox(height > 120 ? 10 : 5, avatar, nameCardLbl);
+            centerBox.setAlignment(Pos.CENTER);
+            card.getChildren().add(centerBox);
+        }
+
+        return card;
     }
 
     private void toggleMute() {
         isMuted = !isMuted;
-        btnMute.setText(isMuted ? "🎤 Activer Micro" : "🔇 Couper Micro");
-        btnMute.setStyle(isMuted ? "-fx-background-color: #E9EDEF; -fx-text-fill: #111B21; -fx-font-weight: bold; -fx-background-radius: 20px;" : "-fx-background-color: #F0F2F5; -fx-text-fill: #111B21; -fx-font-weight: bold; -fx-background-radius: 20px;");
+        btnMute.setText(isMuted ? "🎤 Activer Micro" : "🔇 Micro");
+        btnMute.setStyle(isMuted ? "-fx-background-color: #00A884; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 20px;" : "-fx-background-color: #202C33; -fx-text-fill: #E9EDEF; -fx-font-weight: bold; -fx-background-radius: 20px;");
     }
 
     private void toggleCamera() {
         isCameraOff = !isCameraOff;
-        btnCamera.setText(isCameraOff ? "📹 Activer Caméra" : "🚫 Couper Caméra");
-        btnCamera.setStyle(isCameraOff ? "-fx-background-color: #E9EDEF; -fx-text-fill: #111B21; -fx-font-weight: bold; -fx-background-radius: 20px;" : "-fx-background-color: #F0F2F5; -fx-text-fill: #111B21; -fx-font-weight: bold; -fx-background-radius: 20px;");
+        btnCamera.setText(isCameraOff ? "📹 Activer Caméra" : "🚫 Caméra");
+        btnCamera.setStyle(isCameraOff ? "-fx-background-color: #00A884; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 20px;" : "-fx-background-color: #202C33; -fx-text-fill: #E9EDEF; -fx-font-weight: bold; -fx-background-radius: 20px;");
         if (isCameraOff) {
-            Platform.runLater(() -> localVideoView.setImage(null));
+            Platform.runLater(() -> {
+                localVideoView.setImage(null);
+                updateLayout(); // Rebuild grid to show avatar
+            });
+        } else {
+            Platform.runLater(this::updateLayout); // Rebuild grid to show video
         }
     }
 
@@ -327,10 +412,35 @@ public class CallView {
         timerThread.start();
     }
 
+    private void startSpeakingIndicatorTimer() {
+        speakingIndicatorTimeline = new javafx.animation.Timeline(
+            new javafx.animation.KeyFrame(javafx.util.Duration.millis(200), ev -> {
+                long now = System.currentTimeMillis();
+                for (java.util.Map.Entry<String, StackPane> entry : participantCards.entrySet()) {
+                    String phone = entry.getKey();
+                    StackPane card = entry.getValue();
+                    
+                    Long lastSpoke = lastSpeechTime.get(phone);
+                    boolean isSpeaking = lastSpoke != null && (now - lastSpoke) < 800; // speaking in last 800ms
+                    
+                    if (isSpeaking) {
+                        // Apply glowing Emerald WhatsApp green border
+                        card.setStyle("-fx-background-color: #1F2C34; -fx-background-radius: 12px; -fx-border-radius: 12px; -fx-border-color: #00A884; -fx-border-width: 3px;");
+                    } else {
+                        // Regular subtle dark card border
+                        card.setStyle("-fx-background-color: #1F2C34; -fx-background-radius: 12px; -fx-border-radius: 12px; -fx-border-color: #2D3D48; -fx-border-width: 1px;");
+                    }
+                }
+            })
+        );
+        speakingIndicatorTimeline.setCycleCount(javafx.animation.Timeline.INDEFINITE);
+        speakingIndicatorTimeline.play();
+    }
+
     private void activateHardware(boolean startSending) {
         isHardwareActive = true;
 
-        // Audio
+        // Audio Setup
         try {
             AudioFormat format = new AudioFormat(16000, 16, 1, true, true);
             DataLine.Info targetInfo = new DataLine.Info(TargetDataLine.class, format);
@@ -342,12 +452,24 @@ public class CallView {
                 audioInput.start();
 
                 audioThread = new Thread(() -> {
-                    byte[] buffer = new byte[640]; // Smaller buffer for lower latency (20ms at 16kHz)
+                    byte[] buffer = new byte[640]; // 20ms packet at 16kHz
                     while (isHardwareActive) {
                         int bytesRead = audioInput.read(buffer, 0, buffer.length);
                         if (bytesRead > 0 && isCallActive && !isMuted) {
                             final byte[] packet = new byte[bytesRead];
                             System.arraycopy(buffer, 0, packet, 0, bytesRead);
+                            
+                            // Detect local speaking activity
+                            double sum = 0;
+                            for (int i = 0; i < packet.length; i += 2) {
+                                int sample = (packet[i] << 8) | (packet[i+1] & 0xFF);
+                                sum += sample * sample;
+                            }
+                            double rms = Math.sqrt(sum / (packet.length / 2.0));
+                            if (rms > 500) {
+                                lastSpeechTime.put(socketManager.getUserPhone(), System.currentTimeMillis());
+                            }
+                            
                             // Direct send for audio to minimize lag
                             if (contactPhone.startsWith("GROUP_")) {
                                 socketManager.sendBinary("CALL_AUDIO", contactPhone, "", packet);
@@ -361,6 +483,7 @@ public class CallView {
                         }
                     }
                 });
+                audioThread.setDaemon(true);
                 audioThread.start();
             }
 
@@ -368,6 +491,58 @@ public class CallView {
                 audioOutput = (SourceDataLine) AudioSystem.getLine(sourceInfo);
                 audioOutput.open(format);
                 audioOutput.start();
+                
+                // Start background mixing playback thread
+                audioPlaybackThread = new Thread(() -> {
+                    byte[] mixBuffer = new byte[640];
+                    while (isHardwareActive) {
+                        boolean hasData = false;
+                        int[] sumSamples = new int[320];
+                        
+                        for (java.util.Map.Entry<String, java.util.concurrent.ConcurrentLinkedQueue<byte[]>> entry : participantAudioQueues.entrySet()) {
+                            java.util.concurrent.ConcurrentLinkedQueue<byte[]> queue = entry.getValue();
+                            byte[] packet = queue.poll();
+                            if (packet != null) {
+                                hasData = true;
+                                for (int i = 0; i < 320 && (i * 2 + 1) < packet.length; i++) {
+                                    int sample = (packet[i * 2] << 8) | (packet[i * 2 + 1] & 0xFF);
+                                    
+                                    // 1. Noise gate
+                                    int absVal = Math.abs(sample);
+                                    if (absVal < 150) {
+                                        sample = 0;
+                                    } else {
+                                        // 2. AGC (boost softer speech)
+                                        if (absVal < 4000) {
+                                            sample = (int) (sample * 1.5);
+                                        }
+                                    }
+                                    sumSamples[i] += sample;
+                                }
+                            }
+                        }
+                        
+                        if (hasData) {
+                            for (int i = 0; i < 320; i++) {
+                                int sample = sumSamples[i];
+                                // 3. Saturated Clipping to prevent overflow distortion
+                                if (sample > 32767) sample = 32767;
+                                else if (sample < -32768) sample = -32768;
+                                
+                                mixBuffer[i * 2] = (byte) ((sample >> 8) & 0xFF);
+                                mixBuffer[i * 2 + 1] = (byte) (sample & 0xFF);
+                            }
+                            
+                            if (audioOutput != null) {
+                                audioOutput.write(mixBuffer, 0, mixBuffer.length);
+                            }
+                        } else {
+                            try { Thread.sleep(10); } catch (InterruptedException e) { break; }
+                        }
+                    }
+                });
+                audioPlaybackThread.setDaemon(true);
+                audioPlaybackThread.start();
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -384,14 +559,13 @@ public class CallView {
                             BufferedImage image = webcam.getImage();
                             if (image != null) {
                                 WritableImage fxImage = SwingFXUtils.toFXImage(image, null);
-                                Platform.runLater(() -> localVideoView.setImage(fxImage));
+                                Platform.runLater(() -> {
+                                    localVideoView.setImage(fxImage);
+                                });
 
                                 if (isCallActive) {
                                     try {
                                         ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                                        // Reduce quality to 0.3 for much better latency and sync
-                                        // Note: ImageIO doesn't support quality param directly without ImageWriteParam
-                                        // We will just use the default write for now, but ensure it's JPG
                                         ImageIO.write(image, "jpg", baos);
                                         final byte[] frameData = baos.toByteArray();
                                         
@@ -415,9 +589,27 @@ public class CallView {
         }
     }
 
-    public void receiveAudio(byte[] data) {
-        if (audioOutput != null && isCallActive) {
-            audioOutput.write(data, 0, data.length);
+    public void receiveAudio(String speakerPhone, byte[] data) {
+        if (!isCallActive || data == null) return;
+
+        // 1. Enqueue incoming packet for software mixing
+        java.util.concurrent.ConcurrentLinkedQueue<byte[]> queue = participantAudioQueues.computeIfAbsent(speakerPhone, k -> new java.util.concurrent.ConcurrentLinkedQueue<>());
+        
+        // Prune the queue if it grows too large to maintain absolute real-time sync
+        while (queue.size() > 5) {
+            queue.poll();
+        }
+        queue.add(data);
+
+        // 2. Compute RMS amplitude for speaker visual highlight
+        double sum = 0;
+        for (int i = 0; i < data.length; i += 2) {
+            int sample = (data[i] << 8) | (data[i+1] & 0xFF);
+            sum += sample * sample;
+        }
+        double rms = Math.sqrt(sum / (data.length / 2.0));
+        if (rms > 500) {
+            lastSpeechTime.put(speakerPhone, System.currentTimeMillis());
         }
     }
 
@@ -429,16 +621,18 @@ public class CallView {
                     WritableImage fxImage = SwingFXUtils.toFXImage(image, null);
                     Platform.runLater(() -> {
                         ImageView rv = remoteVideoMap.get(sender);
-                        if (rv == null) {
+                        boolean isNew = (rv == null);
+                        if (isNew) {
                             rv = new ImageView();
                             rv.setPreserveRatio(true);
-                            rv.setStyle("-fx-border-color: #00A884; -fx-border-width: 1px;");
                             remoteVideoMap.put(sender, rv);
-                            remoteVideoPane.getChildren().add(rv);
-                            updateLayout(); // Resize all views
                         }
                         
                         rv.setImage(fxImage);
+                        
+                        if (isNew) {
+                            updateLayout(); // Rebuild grid to show new video feed instead of avatar
+                        }
                     });
                 }
             } catch (Exception e) { e.printStackTrace(); }
@@ -450,6 +644,9 @@ public class CallView {
         isCallActive = false;
         isHardwareActive = false;
 
+        if (speakingIndicatorTimeline != null) {
+            speakingIndicatorTimeline.stop();
+        }
         if (timerThread != null) {
             timerThread.interrupt();
         }
