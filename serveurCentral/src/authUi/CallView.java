@@ -169,6 +169,17 @@ public class CallView {
 
     private void acceptCall() {
         socketManager.sendBinary("CALL_SIGNAL", contactPhone, "", ("CALL_ACCEPT:" + contactPhone).getBytes(StandardCharsets.UTF_8));
+        
+        // Notify all peers in the mesh that we joined
+        if (!contactPhone.startsWith("GROUP_")) {
+            String joinedSignal = "CALL_JOINED:" + socketManager.getUserPhone();
+            synchronized (targetPhones) {
+                for (String tp : targetPhones) {
+                    socketManager.sendBinary("CALL_SIGNAL", tp, "", (joinedSignal + ":" + tp).getBytes(StandardCharsets.UTF_8));
+                }
+            }
+        }
+        
         startCallSession();
     }
 
@@ -219,23 +230,28 @@ public class CallView {
         if (result.isPresent() && !result.get().trim().isEmpty()) {
             String newPhone = result.get().trim().replaceAll("[\\s\\-()]", "");
             
-            // Notify current participants about the new one
-            String syncSignal = "CALL_ADD_PARTICIPANT:" + newPhone;
             if (contactPhone.startsWith("GROUP_")) {
+                // Group calls handle routing through the server
+                String syncSignal = "CALL_ADD_PARTICIPANT:" + newPhone + ":" + contactPhone;
                 socketManager.sendBinary("CALL_SIGNAL", contactPhone, "", syncSignal.getBytes(StandardCharsets.UTF_8));
+                
+                // Request the new one to join
+                targetPhones.add(newPhone);
+                String activeList = socketManager.getUserPhone() + "," + String.join(",", targetPhones);
+                String requestPayload = "CALL_INVITE:" + callType.toUpperCase() + ":" + contactPhone + ":" + activeList + ":" + newPhone;
+                socketManager.sendBinary("CALL_SIGNAL", newPhone, "", requestPayload.getBytes(StandardCharsets.UTF_8));
+                Platform.runLater(this::updateLayout);
             } else {
-                for (String tp : targetPhones) {
-                    socketManager.sendBinary("CALL_SIGNAL", tp, "", syncSignal.getBytes(StandardCharsets.UTF_8));
-                }
+                // P2P Mesh logic
+                String activeList = socketManager.getUserPhone() + "," + String.join(",", targetPhones);
+                // Set the inviter's own phone as the caller for the new user
+                String requestPayload = "CALL_INVITE:" + callType.toUpperCase() + ":" + socketManager.getUserPhone() + ":" + activeList + ":" + newPhone;
+                socketManager.sendBinary("CALL_SIGNAL", newPhone, "", requestPayload.getBytes(StandardCharsets.UTF_8));
+                
+                // Show a toast or update status, but DO NOT add to targetPhones yet. 
+                // We will add them when they explicitly broadcast CALL_JOINED.
+                Platform.runLater(() -> statusLbl.setText("Invitation envoyée à " + newPhone));
             }
-            
-            // Request the new one to join, including current group info if applicable
-            targetPhones.add(newPhone);
-            String activeList = socketManager.getUserPhone() + "," + String.join(",", targetPhones);
-            // Payload format for custom relay: CALL_INVITE:TYPE:contactPhone:activeList:newPhone
-            String requestPayload = "CALL_INVITE:" + callType.toUpperCase() + ":" + contactPhone + ":" + activeList + ":" + newPhone;
-            socketManager.sendBinary("CALL_SIGNAL", newPhone, "", requestPayload.getBytes(StandardCharsets.UTF_8));
-            Platform.runLater(this::updateLayout);
         }
     }
 
