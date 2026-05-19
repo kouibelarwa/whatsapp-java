@@ -154,7 +154,7 @@ public class ContactView {
             avatar = ChatView.buildImageAvatar(ChatView.avatarCache.get(phone), 48);
         } else {
             avatar = ChatView.buildAvatar(name, 48);
-            // Request avatar from server
+
             socketManager.sendBinary("GET_AVATAR", phone, "", "req".getBytes(StandardCharsets.UTF_8));
         }
 

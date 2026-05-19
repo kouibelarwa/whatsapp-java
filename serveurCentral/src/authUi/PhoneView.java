@@ -35,7 +35,7 @@ public class PhoneView {
         Label title = new Label("WhatsApp");
         title.setStyle("-fx-text-fill: #00A884; -fx-font-size: 26px; -fx-font-weight: bold;");
 
-        // --- Server IP field ---
+        //  Server IP field
         Label ipLabel = new Label("@IP");
         ipLabel.setStyle("-fx-text-fill: #667781; -fx-font-size: 11px; -fx-font-weight: bold;");
 
@@ -44,7 +44,7 @@ public class PhoneView {
         ipField.setPrefHeight(36);
         ipField.setPromptText("ex: 192.168.1.10");
 
-        // --- Phone ---
+
         Label sub = new Label("Entrez votre numéro de téléphone");
         sub.setStyle("-fx-text-fill: #667781; -fx-font-size: 13px;");
 
@@ -73,7 +73,7 @@ public class PhoneView {
     }
 
     private void sendCode(String serverIp, String phoneText, Button btnSend, Label statusLabel, Stage stage) {
-        // Use the entered IP to create/reconfigure the network client
+
         String ip = serverIp.isBlank() ? MainApp.resolveServerHost() : serverIp;
         int port = MainApp.resolveServerPort();
         NetworkClient dynamicNetwork = new NetworkClient(ip, port);

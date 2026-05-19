@@ -10,21 +10,14 @@ import server.ClientHandler;
 import java.io.IOException;
 import java.util.List;
 
-/**
- * MessageService — Traitement et livraison des messages.
- */
+
 public class MessageService {
 
     private final MessageDao messageDao = new MessageDao();
     private final UserDao    userDao    = new UserDao();
     private final ContactDao contactDao = new ContactDao();
 
-    /**
-     * Traite un message entrant :
-     * 1. Sauvegarde en DB
-     * 2. Livraison si destinataire connecté → DELIVERED
-     * 3. Sinon reste NOT_DELIVERED → livré plus tard
-     */
+
     public void process(Message m, String receiverPhone, byte[] data) {
         // Sauvegarde en DB
         int msgId = messageDao.save(m, data);
@@ -35,7 +28,7 @@ public class MessageService {
         }
 
 
-        // Livraison si connecté (à toutes les sessions actives)
+
         java.util.List<ClientHandler> receivers = ChatServer.clients.get(m.getReceiverId());
         if (receivers == null && receiverPhone != null && !receiverPhone.isBlank()) {
             receivers = findOnlineByPhone(receiverPhone);
@@ -84,9 +77,7 @@ public class MessageService {
         }
     }
 
-    /**
-     * Livre tous les messages non délivrés lors de la reconnexion.
-     */
+
     public void deliverOfflineMessages(int userId, String userPhone,
                                        ClientHandler handler) {
         List<Message> pending = messageDao.getUndelivered(userId);

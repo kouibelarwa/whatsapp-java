@@ -56,7 +56,7 @@ public class MainApp {
             new PhoneView(auth, network).start(new Stage());
         }
     }
-    } // Close ChatApplication
+    } // fermer ChatApplication
 
     public static NetworkClient createNetworkClient() {
         return new NetworkClient(resolveServerHost(), resolveServerPort());
@@ -71,7 +71,7 @@ public class MainApp {
         if (fromEnv != null && !fromEnv.isBlank()) {
             return fromEnv.trim();
         }
-        return "100.104.161.20";
+        return "localhost";
     }
 
     public static int resolveServerPort() {

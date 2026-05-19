@@ -7,9 +7,7 @@ import java.util.List;
 
 public class MessageDao {
 
-    /**
-     * Initialise la colonne reply_to_id si elle n'existe pas.
-     */
+
     public static void initReplyColumn() {
         try (Connection conn = DBConnection.getConnection();
              Statement stmt = conn.createStatement()) {
@@ -49,10 +47,7 @@ public class MessageDao {
         }
     }
 
-    /**
-     * Sauvegarde un message (texte ou binaire).
-     * Retourne l'ID généré.
-     */
+
     public int save(Message m, byte[] data) {
         String sql = "INSERT INTO messages"
                 + "(sender_id, receiver_id, type, filename, content, data, etat, reply_to_id) "
@@ -98,10 +93,7 @@ public class MessageDao {
         return -1;
     }
 
-    /**
-     * Récupère la conversation complète entre deux utilisateurs.
-     * Utilisé par ConversationView pour charger l'historique.
-     */
+
     public List<Message> getConversation(int userId1, int userId2) {
         List<Message> list = new ArrayList<>();
 
@@ -144,9 +136,7 @@ public class MessageDao {
         return list;
     }
 
-    /**
-     * Supprime la conversation complète entre deux utilisateurs.
-     */
+
     public void deleteConversation(int userId1, int userId2) {
         String sql = "DELETE FROM messages "
                 + "WHERE (sender_id = ? AND receiver_id = ?) "
@@ -161,9 +151,7 @@ public class MessageDao {
         } catch (Exception e) { e.printStackTrace(); }
     }
 
-    /**
-     * Récupère les messages non délivrés pour un receiver_id.
-     */
+
     public List<Message> getUndelivered(int receiverId) {
         List<Message> list = new ArrayList<>();
         String sql = "SELECT m.id, m.sender_id, m.receiver_id, "
@@ -197,7 +185,7 @@ public class MessageDao {
         return list;
     }
 
-    /** Charge les bytes BLOB d'un message binaire. */
+
     public byte[] getDataById(int id) {
         String sql = "SELECT data FROM messages WHERE id = ?";
         try (Connection conn = DBConnection.getConnection();
@@ -209,7 +197,7 @@ public class MessageDao {
         return new byte[0];
     }
 
-    /** Met à jour l'état (DELIVERED ou READ). */
+
     public void updateEtat(int id, String etat) {
         String sql = "UPDATE messages SET etat = ? WHERE id = ?";
         try (Connection conn = DBConnection.getConnection();
@@ -222,7 +210,7 @@ public class MessageDao {
 
 
 
-    /** Récupère un message par son ID. */
+
     public Message getMessageById(int id) {
         String sql = "SELECT m.id, m.sender_id, m.receiver_id, "
                 + "m.type, m.filename, m.content, m.etat, m.sent_at, m.reply_to_id, "
@@ -258,7 +246,7 @@ public class MessageDao {
         return null;
     }
 
-    /** Marque tous les messages d'un expéditeur vers un destinataire comme READ. */
+
     public void markAllAsRead(int senderId, int receiverId) {
         String sql = "UPDATE messages SET etat = 'READ' "
                 + "WHERE sender_id = ? AND receiver_id = ? AND etat != 'READ'";
@@ -270,7 +258,7 @@ public class MessageDao {
         } catch (Exception e) { e.printStackTrace(); }
     }
 
-    // --- Group Messages Operations ---
+
 
     public int saveGroupMessage(Message m, int groupId, byte[] data) {
         String sql = "INSERT INTO group_messages (group_id, sender_id, type, filename, content, data, sent_at, reply_to_id) " +
@@ -359,7 +347,7 @@ public class MessageDao {
 
     public List<String[]> getInteractedUsers(int userId) {
         List<String[]> list = new ArrayList<>();
-        // Get unique users from messages where the user is sender or receiver
+
         String sql = "SELECT DISTINCT u.id, u.phone, u.username, u.status " +
                      "FROM users u " +
                      "WHERE u.id != ? AND u.id IN (" +

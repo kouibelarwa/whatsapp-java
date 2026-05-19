@@ -4,10 +4,7 @@ import java.sql.*;
 
 public class CallDao {
 
-    /**
-     * Crée un appel RINGING avec les IDs.
-     * Retourne l'ID généré (ou -1 en cas d'erreur).
-     */
+
     public int createCall(int callerId, int calleeId) {
         String sql = "INSERT INTO calls(caller_id, callee_id, status, created_at) "
                 + "VALUES (?, ?, 'RINGING', NOW())";
@@ -25,12 +22,7 @@ public class CallDao {
         return -1;
     }
 
-    /**
-     * Met à jour le statut de l'appel.
-     * ACCEPTED → enregistre start_time
-     * ENDED    → enregistre end_time + calcule durée
-     * Autres   → juste le statut
-     */
+
     public void updateStatus(int callId, String status) {
         String sql;
         if ("ACCEPTED".equals(status)) {
@@ -51,7 +43,7 @@ public class CallDao {
         }
     }
 
-    /** Marque l'appel comme MISSED. */
+
     public void markMissed(int callId) {
         updateStatus(callId, "MISSED");
     }
