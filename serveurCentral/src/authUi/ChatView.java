@@ -45,7 +45,7 @@ public class ChatView {
     private ConversationView activeConversation;
     private String activeContactPhone;
     private CallView activeCallView;
-    private final SocketManager socketManager; // Private socket for this user
+    private final SocketManager socketManager; // Private socket pour ce  utilisateur
 
     private final Map<String, ConversationView> conversationCache = new HashMap<>();
     public static final Map<String, byte[]> avatarCache = new HashMap<>();
@@ -86,7 +86,7 @@ public class ChatView {
         startBinaryListener(contactView);
         socketManager.sendBinary("GET_AVATAR", phone, "", "req".getBytes(StandardCharsets.UTF_8));
         contactView.loadContacts();
-        // Retry once after listener warmup to guarantee list visibility right after
+
         // login.
         new Thread(() -> {
             try {
@@ -410,7 +410,7 @@ public class ChatView {
                 callerPhone = parts.length >= 3 ? parts[2] : (sender != null ? sender : "Inconnu");
             }
             
-            // Priorité : Surnom local > Nom envoyé par serveur (pour groupes) > Numéro brut
+
             String callerDisplayName = contactView.allContacts.getOrDefault(callerPhone, callerPhone);
             if (callerDisplayName.equals(callerPhone) && parts.length >= 4 && !signal.equals("CALL_INVITE")) {
                 callerDisplayName = parts[3]; // Nom synchronisé envoyé par le serveur
@@ -421,12 +421,12 @@ public class ChatView {
                         ("CALL_REJECT:" + callerPhone).getBytes(StandardCharsets.UTF_8));
                 activeCallView = null;
             }, () -> {
-                // Hangup handled by CallView itself now
+
                 activeCallView = null;
             }, socketManager);
             activeCallView.setAllContacts(contactView.allContacts);
             
-            // If the request includes a list of participants (multi-party), add them
+
             if (signal.equals("CALL_INVITE") && parts.length >= 4) {
                 activeCallView.handleActiveList(parts[3]);
             } else if (parts.length >= 5) {
@@ -440,7 +440,7 @@ public class ChatView {
         if (signal.equals("CALL_JOINED")) {
             String joinedPhone = parts.length >= 2 ? parts[1] : null;
             if (joinedPhone != null && activeCallView != null) {
-                // Ensure session is started in case we were the original caller waiting
+
                 activeCallView.startCallSession(); 
                 activeCallView.handleJoined(joinedPhone);
             }
@@ -451,9 +451,7 @@ public class ChatView {
             String newPhone = parts.length >= 2 ? parts[1] : null;
             if (newPhone != null && activeCallView != null) {
                 activeCallView.handleJoined(newPhone);
-                // The new participant doesn't need to be in targetPhones for relaying (group mode)
-                // but if we are in P2P mode, we might need to add them to targetPhones.
-                // Let's assume we want to support P2P mesh too.
+
             }
             return;
         }
@@ -467,7 +465,7 @@ public class ChatView {
         if (signal.equals("CALL_JOINED")) {
             String joinedPhone = parts.length >= 2 ? parts[1] : null;
             if (joinedPhone != null && activeCallView != null) {
-                activeCallView.startCallSession(); // Essential for the caller to join the conversation
+                activeCallView.startCallSession();
                 activeCallView.handleJoined(joinedPhone);
             }
             return;
@@ -475,7 +473,7 @@ public class ChatView {
         if (signal.equals("CALL_ACTIVE_LIST")) {
             String list = parts.length >= 2 ? parts[1] : "";
             if (activeCallView != null) {
-                activeCallView.startCallSession(); // Essential for participants joining an existing call
+                activeCallView.startCallSession();
                 activeCallView.handleActiveList(list);
             }
             return;
@@ -569,7 +567,7 @@ public class ChatView {
                 if (!contactView.hasContactByName(m.trim())) {
                     Alert alert = new Alert(Alert.AlertType.ERROR, "Erreur : Contact introuvable (" + m.trim() + ") !");
                     alert.showAndWait();
-                    return; // Stop creation
+                    return;
                 }
             }
 

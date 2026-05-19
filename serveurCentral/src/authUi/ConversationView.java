@@ -71,7 +71,7 @@ public class ConversationView {
     private final MessageDao messageDao = new MessageDao();
     private final UserDao userDao = new UserDao();
 
-    // Contact map injected by ChatView (per-user, non-static)
+
     private Map<String, String> allContacts = new java.util.HashMap<>();
 
     public void setAllContacts(Map<String, String> allContacts) {
@@ -81,7 +81,7 @@ public class ConversationView {
             if (!newName.equals(this.contactName)) {
                 this.contactName = newName;
                 refreshHeader();
-                // When a contact is renamed, we should refresh history to update bubble names
+
                 Platform.runLater(this::refreshHistory);
             }
         }

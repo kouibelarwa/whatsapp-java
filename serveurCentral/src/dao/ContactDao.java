@@ -5,13 +5,7 @@ import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
-  ContactDao — opérations contacts côté serveur.
 
- La table contacts utilise owner_id et contact_id (IDs de users).
-  On retourne des objets User avec phone + username pour que
-  l'interface puisse afficher le nom et le statut.
- */
 public class ContactDao {
 
     public static void initContactTable() {
@@ -31,11 +25,7 @@ public class ContactDao {
         }
     }
 
-    /**
-      Ajoute un contact.
-      owner_id  = celui qui ajoute
-      contact_id = celui qui est ajouté
-     */
+
     public boolean addContact(int ownerId, int contactId, String nickname) {
         String sql = "INSERT INTO contacts(owner_id, contact_id, nickname) "
                 + "VALUES (?, ?, ?) "
@@ -53,9 +43,7 @@ public class ContactDao {
 
 
 
-    /**
-     * Supprime un contact.
-     */
+
     public boolean removeContact(int ownerId, int contactId) {
         String sql = "DELETE FROM contacts WHERE owner_id = ? AND contact_id = ?";
         try (Connection conn = DBConnection.getConnection();
@@ -68,10 +56,7 @@ public class ContactDao {
         return false;
     }
 
-    /**
-     * Récupère tous les contacts d'un utilisateur avec leur statut.
-     * Retourne phone + username + status pour affichage interface.
-     */
+
     public List<String[]> getContactsWithNickname(int ownerId) {
         List<String[]> list = new ArrayList<>();
         String sql = "SELECT u.id, u.phone, u.username, u.status, c.nickname "
@@ -96,9 +81,7 @@ public class ContactDao {
         return list;
     }
 
-    /**
-     * Vérifie si un contact existe déjà.
-     */
+
     public boolean contactExists(int ownerId, int contactId) {
         String sql = "SELECT 1 FROM contacts "
                 + "WHERE owner_id = ? AND contact_id = ?";

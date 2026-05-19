@@ -1,16 +1,6 @@
 package model;
 
-/**
- * Représente un message.
- *
- * RÈGLE DE STOCKAGE :
- *   type "text"              → content rempli, data null
- *   type "audio/video/file"  → data LONGBLOB rempli, content null
- *
- * IDENTIFIANTS :
- *   senderId / receiverId → IDs de la table users (INT)
- *   senderPhone           → phone de l'expéditeur (pour affichage et socket)
- */
+
 public class Message {
 
     private int    id;
@@ -25,7 +15,7 @@ public class Message {
     private Integer replyToId; // ID du message auquel on répond
     private boolean isPinned;
 
-    // ── Factory texte ────────────────────────────────────────────
+
     public static Message text(int senderId, String senderPhone,
                                int receiverId, String content) {
         Message m    = new Message();
@@ -39,7 +29,7 @@ public class Message {
         return m;
     }
 
-    // ── Factory binaire (audio / video / file) ───────────────────
+
     public static Message binary(int senderId, String senderPhone,
                                  int receiverId,
                                  String type, String filename) {
@@ -54,7 +44,7 @@ public class Message {
         return m;
     }
 
-    // ── Constructeur depuis la base ──────────────────────────────
+
     public Message(int id, int senderId, String senderPhone,
                    int receiverId, String type,
                    String filename, String content, String etat, java.sql.Timestamp sentAt) {

@@ -14,10 +14,7 @@ import dao.CallDao;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * CallService — Gère les signaux d'appel audio/vidéo côté serveur.
- * Route les signaux entre appelant et appelé.
- */
+
 public class CallService {
 
     private final UserDao userDao = new UserDao();
@@ -29,9 +26,7 @@ public class CallService {
 
 
 
-    /**
-     * Appelant envoie CALL_REQUEST → on notifie l'appelé.
-     */
+
     public void handleRequest(int callerId, String callerPhone, String calleePhone, String callType) {
         System.out.println("[CallService] Appel " + callType + " de " + callerPhone
                 + " → " + calleePhone);
@@ -59,14 +54,14 @@ public class CallService {
             return;
         }
 
-        // Save call in DB
+
         int callId = callDao.createCall(callerId, calleeId);
         if (callId != -1) {
             activeCalls.put(callerPhone, callId);
             activeCalls.put(calleePhone, callId);
         }
 
-        // Envoyer signal d'appel entrant à l'appelé (inclure le type d'appel) - toutes ses sessions
+
         for (ClientHandler calleeHandler : calleeHandlers) {
             try {
                 String signal = "CALL_INCOMING:" + callType + ":" + callerPhone;
@@ -86,9 +81,7 @@ public class CallService {
 
 
 
-    /**
-     * Appelé accepte → notifier l'appelant.
-     */
+
     public void handleAccept(int calleeId, String calleePhone, String callerPhone) {
         System.out.println("[CallService] " + calleePhone
                 + " accepte l'appel de " + callerPhone);
@@ -122,9 +115,7 @@ public class CallService {
 
 
 
-    /**
-     * Appelé refuse → notifier l'appelant.
-     */
+
     public void handleReject(int calleeId, String calleePhone, String callerPhone) {
         System.out.println("[CallService] " + calleePhone
                 + " refuse l'appel de " + callerPhone);
@@ -145,9 +136,7 @@ public class CallService {
 
 
 
-    /**
-     * Un des deux raccroche → notifier l'autre.
-     */
+
     public void handleEnd(int senderId, String senderPhone, String otherPhone) {
         System.out.println("[CallService] " + senderPhone
                 + " raccroche (autre : " + otherPhone + ")");

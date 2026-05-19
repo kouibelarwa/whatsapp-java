@@ -53,12 +53,7 @@ public class ClientHandler extends Thread {
                 return;
             }
 
-            // Note : On ne livre pas les messages ici car le client les charge
-            // directement depuis la base de données via loadHistory()
-            // msgService.deliverOfflineMessages(userId, userPhone, this);
 
-
-            // Boucle principale
             chatLoop();
 
         } catch (Exception e) {
@@ -129,7 +124,7 @@ public class ClientHandler extends Thread {
             System.err.println("[Server] BDD injoignable, utilisation d'un ID temporaire: " + id);
         }
 
-        // Multi-session support: We allow multiple connections for the same user.
+
 
         this.userId    = id;
         this.userPhone = reqPhone;
@@ -157,7 +152,7 @@ public class ClientHandler extends Thread {
             return false;
         }
 
-        // Multi-session support: We allow multiple connections for the same user.
+
 
         this.userId    = user.getId();
         this.userPhone = user.getPhone();

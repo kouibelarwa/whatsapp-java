@@ -67,7 +67,7 @@ public class UserDao {
         try (Statement stmt = conn.createStatement()) {
             stmt.execute("ALTER TABLE users ADD COLUMN avatar LONGBLOB");
         } catch (Exception e) {
-            // Ignore if column already exists
+
         }
     }
 
@@ -120,7 +120,7 @@ public class UserDao {
             ps.setString(2, dbPhone);
             int updated = ps.executeUpdate();
             if (updated == 0) {
-                // User does not exist, insert them. Use a simple insert.
+
                 int randomId = new java.util.Random().nextInt(900000) + 100000;
                 String insert = "INSERT INTO users(id, phone, verification_code, verified, status, username) VALUES(?, ?, ?, false, 'OFFLINE', ?)";
                 try (PreparedStatement ps2 = conn.prepareStatement(insert)) {
@@ -313,7 +313,7 @@ public class UserDao {
         return input.replaceAll("[^0-9]", "");
     }
 
-    // --- Group Operations ---
+
 
     public int createGroup(String name, int createdBy) {
         String sql = "INSERT INTO groups_ (name, created_by) VALUES (?, ?)";
@@ -354,7 +354,7 @@ public class UserDao {
             ps.setBoolean(3, isAdmin);
             ps.executeUpdate();
         } catch (Exception e) {
-            // Ignore if exists
+
         }
     }
 
