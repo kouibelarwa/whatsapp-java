@@ -437,6 +437,16 @@ public class ChatView {
             return;
         }
 
+        if (signal.equals("CALL_JOINED")) {
+            String joinedPhone = parts.length >= 2 ? parts[1] : null;
+            if (joinedPhone != null && activeCallView != null) {
+                // Ensure session is started in case we were the original caller waiting
+                activeCallView.startCallSession(); 
+                activeCallView.handleJoined(joinedPhone);
+            }
+            return;
+        }
+
         if (signal.equals("CALL_ADD_PARTICIPANT")) {
             String newPhone = parts.length >= 2 ? parts[1] : null;
             if (newPhone != null && activeCallView != null) {
