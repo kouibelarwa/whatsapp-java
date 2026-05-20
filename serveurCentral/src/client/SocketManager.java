@@ -4,7 +4,7 @@ import java.io.*;
 import java.net.Socket;
 
 public class SocketManager {
-    // Removed static instance to support multi-users
+
     private static SocketManager legacyInstance;
 
     private Socket socket;
@@ -71,7 +71,7 @@ public class SocketManager {
                     listener.onMessage(type, sender, filename, data);
                 }
             } catch (Exception e) {
-                listener.onDisconnect();
+                listener.onDisconnect();//si erreur de connexion
             }
         }).start();
     }
@@ -86,7 +86,7 @@ public class SocketManager {
         this.userId = id;
         this.userPhone = p;
     }
-
+//fermer la connexion actuelle
     public static void reset() {
         try { if(legacyInstance != null && legacyInstance.socket != null) legacyInstance.socket.close(); }
         catch(Exception e){}

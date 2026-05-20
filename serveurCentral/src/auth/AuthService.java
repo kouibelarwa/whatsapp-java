@@ -17,7 +17,7 @@ public class AuthService {
     }
 
     public NetworkClient getNetwork() { return network; }
-
+//demande au serveur d’envoyer un code SMS.
     public void requestCode(String phone, Runnable ok, Runnable err) {
         new Thread(() -> {
             try {

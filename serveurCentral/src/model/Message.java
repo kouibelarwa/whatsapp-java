@@ -75,13 +75,13 @@ public class Message {
 
     private Message() {}
 
-    // ── Helpers ──────────────────────────────────────────────────
+    // ── Helpers vérifie si c’est un message texte/audio/video
     public boolean isText()   { return "text".equals(type); }
     public boolean isBinary() {
         return "audio".equals(type) || "video".equals(type) || "file".equals(type) || "image".equals(type);
     }
 
-    // ── Getters / setters ─────────────────────────────────────────
+    // ── Getters / setters
     public int    getId()           { return id; }
     public int    getSenderId()     { return senderId; }
     public int    getReceiverId()   { return receiverId; }

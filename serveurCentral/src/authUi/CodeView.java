@@ -44,8 +44,7 @@ public class CodeView {
         Label sub = new Label("Code envoyé au : " + phone);
         sub.setStyle("-fx-text-fill: #667781; -fx-font-size: 12px;");
 
-        // --- Code URL Box ---
-        // Use the actual server host from the network connection (IP entered by user)
+
         String serverHost = network.getHost();
         String codeUrl = "http://" + serverHost + ":8080/code?phone=" + phone;
 
@@ -82,13 +81,13 @@ public class CodeView {
             new Thread(() -> {
                 try {
                     URL url = new URL(codeUrl);
-                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection(); //recuperer le code depuis
                     conn.setConnectTimeout(3000);
                     conn.setReadTimeout(3000);
                     BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
                     String response = reader.readLine();
                     reader.close();
-                    // Response: "Code de verification pour +212... : 123456"
+                    // Response: "Code de verification "
                     if (response != null && response.contains(":")) {
                         String code = response.substring(response.lastIndexOf(":") + 1).trim();
                         Platform.runLater(() -> {
@@ -98,13 +97,13 @@ public class CodeView {
                         });
                     } else {
                         Platform.runLater(() -> {
-                            btnFetchCode.setText("❌ Pas de code trouvé");
+                            btnFetchCode.setText(" Pas de code trouvé");
                             btnFetchCode.setDisable(false);
                         });
                     }
                 } catch (Exception ex) {
                     Platform.runLater(() -> {
-                        btnFetchCode.setText("❌ Serveur inaccessible");
+                        btnFetchCode.setText(" Serveur inaccessible");
                         btnFetchCode.setDisable(false);
                     });
                 }

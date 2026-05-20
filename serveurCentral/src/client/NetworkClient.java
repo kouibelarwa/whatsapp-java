@@ -27,7 +27,7 @@ public class NetworkClient {
 
     public String send(String message) {
         try {
-            ensureConnected();
+            ensureConnected(); //verifie la connexion
             out.writeUTF(message);
             out.flush();
             return in.readUTF();
@@ -46,7 +46,7 @@ public class NetworkClient {
 
     public Socket getSocket() {
         return socket;
-    }
+    }  //retourne la socket actuelle
 
     public String getHost() {
         return host;
