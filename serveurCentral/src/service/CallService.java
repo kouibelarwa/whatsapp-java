@@ -26,7 +26,7 @@ public class CallService {
 
 
 
-
+//verifie si le destinataire existe
     public void handleRequest(int callerId, String callerPhone, String calleePhone, String callType) {
         System.out.println("[CallService] Appel " + callType + " de " + callerPhone
                 + " → " + calleePhone);
