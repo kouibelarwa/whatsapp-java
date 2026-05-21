@@ -1,0 +1,65 @@
+package server;
+
+import com.sun.net.httpserver.HttpServer;
+import java.io.*;
+import java.net.InetSocketAddress;
+import java.util.concurrent.ConcurrentHashMap;
+
+
+public class SmsApiServer {
+
+
+    private static final ConcurrentHashMap<String, String> codes =
+            new ConcurrentHashMap<>();
+
+    public static void start() throws Exception {
+        HttpServer server = HttpServer.create(
+                new InetSocketAddress(8080), 0);
+
+
+        server.createContext("/code", exchange -> {
+            String query = exchange.getRequestURI().getQuery();
+            String phone = extractPhone(query);
+            String code  = phone != null ? codes.get(phone) : null;
+
+            String body;
+            if (code != null) {
+                body = "Code de verification pour " + phone + " : " + code;
+            } else {
+                body = "Aucun code trouve pour ce numero.";
+            }
+
+            exchange.sendResponseHeaders(200, body.getBytes().length);
+            OutputStream os = exchange.getResponseBody();
+            os.write(body.getBytes());
+            os.close();
+        });
+
+        server.start();
+        System.out.println("[SmsApi] Serveur HTTP demarre sur http://localhost:8080/code");
+    }
+
+
+    public static void storeCode(String phone, String code) {
+        codes.put(phone, code);
+        System.out.println("[SmsApi] Code enregistre pour " + phone
+                + " → http://localhost:8080/code?phone=" + phone);
+    }
+
+    public static void removeCode(String phone) {
+        codes.remove(phone);
+    }
+
+    public static String getCode(String phone) {
+        return codes.get(phone);
+    }
+
+    private static String extractPhone(String query) {
+        if (query == null) return null;
+        for (String param : query.split("&")) {
+            String[] kv = param.split("=");
+            if (kv.length == 2 && "phone".equals(kv[0])) return kv[1];
+        }
+        return null;
+    }
+}
