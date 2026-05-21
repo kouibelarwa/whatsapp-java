@@ -14,7 +14,7 @@ public class NetworkClient {
         this.host = host;
         this.port = port;
     }
-
+//Vérifie si le client est connecté.
     private void ensureConnected() throws IOException {
         if (socket == null || socket.isClosed() || out == null || in == null) {
             System.out.println("[NetworkClient] Tentative connexion -> " + host + ":" + port);
@@ -50,5 +50,5 @@ public class NetworkClient {
 
     public String getHost() {
         return host;
-    }
+    } //retourne @de serveur
 }

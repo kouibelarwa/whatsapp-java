@@ -41,7 +41,7 @@ public class MessageService {
                         : data;
                 String typeToSend = m.getType();
                 String filenameToSend = m.getFilename() != null ? m.getFilename() : "";
-                
+
                 if (m.getReplyToId() != null) {
                     typeToSend = "REPLY:" + m.getType();
                     filenameToSend = String.valueOf(m.getReplyToId());
@@ -97,7 +97,7 @@ public class MessageService {
                 }
                 String typeToSend = m.getType();
                 String filenameToSend = m.getFilename() != null ? m.getFilename() : "";
-                
+
                 if (m.getReplyToId() != null) {
                     typeToSend = "REPLY:" + m.getType();
                     filenameToSend = String.valueOf(m.getReplyToId());
@@ -136,12 +136,12 @@ public class MessageService {
     public void createGroup(String groupName, int creatorId, String creatorPhone, List<String> memberNames, ClientHandler client) {
         List<String[]> contacts = contactDao.getContactsWithNickname(creatorId);
         List<Integer> memberIds = new java.util.ArrayList<>();
-        
+
         // Validation des membres avant création (par nom/nickname)
         for (String name : memberNames) {
             String cleanName = name.trim();
             if (cleanName.isEmpty()) continue;
-            
+
             boolean found = false;
             for (String[] c : contacts) {
                 String username = c[2];
@@ -171,7 +171,7 @@ public class MessageService {
         int groupId = userDao.createGroup(groupName, creatorId);
         if (groupId != -1) {
             userDao.addMember(groupId, creatorId, true);
-            
+
             for (int memberId : memberIds) {
                 userDao.addMember(groupId, memberId, false);
             }
@@ -180,7 +180,7 @@ public class MessageService {
                 String payload = "GROUP_CREATED:" + groupId + ":" + groupName;
                 client.send("GROUP_SIGNAL", "", "", payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             } catch (Exception e) {}
-            
+
             List<Integer> members = userDao.getGroupMembers(groupId);
             for (int memberId : members) {
                 java.util.List<ClientHandler> receiverClients = ChatServer.clients.get(memberId);
@@ -221,7 +221,7 @@ public class MessageService {
                         }
                         String typeToSend = "GROUP_MSG:" + m.getType();
                         String filenameToSend = m.getFilename();
-                        
+
                         if (m.getReplyToId() != null) {
                             typeToSend = "GROUP_REPLY:" + m.getType();
                             filenameToSend = String.valueOf(m.getReplyToId());
@@ -274,7 +274,6 @@ public class MessageService {
             sendGroupError(client, "Seul un admin peut ajouter des membres.");
             return;
         }
-        
         List<String[]> contacts = contactDao.getContactsWithNickname(requesterId);
         String cleanName = contactName.trim();
         int targetId = -1;
@@ -284,7 +283,6 @@ public class MessageService {
                 break;
             }
         }
-        
         if (targetId == -1) {
             model.User u = userDao.getByUsername(cleanName);
             if (u == null) u = userDao.searchByPhone(cleanName);
@@ -292,12 +290,10 @@ public class MessageService {
                 targetId = u.getId();
             }
         }
-        
         if (targetId == -1) {
             sendGroupError(client, "User does not exist in the database.");
             return;
         }
-        
         userDao.addMember(groupId, targetId, false);
         broadcastGroupUpdate(groupId);
     }
@@ -309,7 +305,6 @@ public class MessageService {
         }
         userDao.removeMember(groupId, targetId);
         broadcastGroupUpdate(groupId);
-        // Also inform the removed user if they are online
         java.util.List<ClientHandler> removedClients = ChatServer.clients.get(targetId);
         if (removedClients != null) {
             for (ClientHandler removedClient : removedClients) {
